@@ -44,18 +44,29 @@ describe("RoomSession", () => {
   let now: number;
   let changes: SessionSnapshot[];
   let session: RoomSession;
+  let sockets: FakeSocket[];
+  let timers: { fn: () => void; ms: number }[];
 
   beforeEach(() => {
     socket = new FakeSocket();
+    sockets = [];
+    timers = [];
     now = 1_000;
     changes = [];
     session = new RoomSession({
       url: "ws://localhost:8080/ws",
       roomId: "movie-night",
       name: "Ryan",
-      createSocket: () => socket,
+      createSocket: () => {
+        if (sockets.length > 0) socket = new FakeSocket();
+        sockets.push(socket);
+        return socket;
+      },
       now: () => now,
       onChange: (s) => changes.push(s),
+      setTimer: (fn, ms) => timers.push({ fn, ms }),
+      clearTimer: () => timers.splice(0),
+      random: () => 0,
     });
   });
 
@@ -150,6 +161,7 @@ describe("RoomSession", () => {
     });
     expect(session.snapshot.error).toBe("room is full");
     session.close();
+    expect(timers).toEqual([]);
     expect(socket.closed).toBe(true);
     expect(session.snapshot.status).toBe("closed");
   });
@@ -157,5 +169,82 @@ describe("RoomSession", () => {
   it("ignores malformed messages", () => {
     socket.raw('{"type":"state"}');
     expect(changes).toEqual([]);
+  });
+
+  describe("reconnecting", () => {
+    function joinAndDrop(): void {
+      socket.onopen?.(new Event("open"));
+      welcome();
+      socket.onclose?.({} as CloseEvent);
+    }
+
+    it("gives up if it never got in", () => {
+      socket.onclose?.({} as CloseEvent);
+      expect(session.snapshot.status).toBe("closed");
+      expect(session.snapshot.error).toBe("Couldn't reach the server.");
+      expect(timers).toEqual([]);
+    });
+
+    it("keeps the room state and rejoins as the same member", () => {
+      joinAndDrop();
+      expect(session.snapshot).toMatchObject({
+        status: "reconnecting",
+        state: paused,
+      });
+      expect(timers.map((t) => t.ms)).toEqual([1_000]);
+
+      timers.shift()!.fn();
+      expect(sockets).toHaveLength(2);
+      socket.onopen?.(new Event("open"));
+      expect(socket.sent[0]).toMatchObject({
+        type: "join",
+        clientId: "client-1",
+      });
+      welcome();
+      expect(session.snapshot.status).toBe("joined");
+      expect(session.snapshot.joins).toBe(2);
+    });
+
+    it("waits longer after each failed attempt, then starts over once back", () => {
+      joinAndDrop();
+      for (let i = 0; i < 5; i++) {
+        timers.shift()!.fn();
+        socket.onclose?.({} as CloseEvent);
+      }
+      expect(timers.map((t) => t.ms)).toEqual([10_000]);
+      timers.shift()!.fn();
+      welcome();
+      socket.onclose?.({} as CloseEvent);
+      expect(timers.map((t) => t.ms)).toEqual([1_000]);
+    });
+
+    it("sends what the user did while disconnected right after rejoining", () => {
+      joinAndDrop();
+      session.sendIntent({ type: "pause", baseVersion: 0, position: 3 });
+      session.sendIntent({ type: "seek", baseVersion: 0, position: 9 });
+      session.sendMedia("https://x.test/b");
+      timers.shift()!.fn();
+      socket.onopen?.(new Event("open"));
+      expect(socket.sentTypes()).toEqual(["join", "media", "seek", "ping"]);
+    });
+
+    it("treats a silent connection as dropped", () => {
+      socket.onopen?.(new Event("open"));
+      welcome();
+      now += 30_000;
+      session.ping();
+      expect(session.snapshot.status).toBe("joined");
+      now += 30_000;
+      session.ping();
+      expect(socket.closed).toBe(true);
+      expect(session.snapshot.status).toBe("reconnecting");
+    });
+
+    it("stops trying once closed", () => {
+      joinAndDrop();
+      session.close();
+      expect(timers).toEqual([]);
+      expect(session.snapshot.status).toBe("closed");
+    });
   });
 });

@@ -16,6 +16,8 @@ export interface RoomUpdate {
   /** Null when the tab is not in a room. */
   state: RoomState | null;
   offsetMs: number;
+  /** Bumped on every (re)join. The state may then be older than the last one: follow it anyway. */
+  joins: number;
 }
 
 /** Content script -> service worker. */

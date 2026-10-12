@@ -124,6 +124,8 @@ export class MediaFollower {
       this.settled = room;
       return;
     }
+    // A room that has lost its video (a restarted server) needs telling again.
+    if (roomChanged && room === "") this.settled = null;
     if (roomChanged && room !== "") {
       this.navigating = true;
       this.landed = null;

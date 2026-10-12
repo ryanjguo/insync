@@ -24,19 +24,24 @@ const (
 	sendBuffer = 64
 	// writeTimeout bounds a single WebSocket write.
 	writeTimeout = 10 * time.Second
+	// idleTimeout is how long a connection may go without sending anything
+	// before it is dropped. Clients ping every 20 s, so a connection this quiet
+	// is dead (say, a laptop that went to sleep) and its member should leave.
+	idleTimeout = 60 * time.Second
 )
 
 // Server serves the health check, the WebSocket endpoint and, optionally, a
 // static directory (the local test page).
 type Server struct {
-	rooms     *room.Registry
-	staticDir string
-	now       func() time.Time
+	rooms       *room.Registry
+	staticDir   string
+	now         func() time.Time
+	idleTimeout time.Duration
 }
 
 // New returns a Server. If staticDir is non-empty it is served at /.
 func New(staticDir string) *Server {
-	return &Server{rooms: room.NewRegistry(), staticDir: staticDir, now: time.Now}
+	return &Server{rooms: room.NewRegistry(), staticDir: staticDir, now: time.Now, idleTimeout: idleTimeout}
 }
 
 // Handler returns the server's HTTP handler.
@@ -94,9 +99,11 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	for {
-		_, data, err := conn.Read(ctx)
+		rctx, done := context.WithTimeout(ctx, s.idleTimeout)
+		_, data, err := conn.Read(rctx)
+		done()
 		if err != nil {
-			return // client went away, or was too slow and got cancelled
+			return // client went away, went quiet, or was too slow and got cancelled
 		}
 		msg, err := protocol.DecodeClientMessage(data)
 		if err != nil {

@@ -33,7 +33,11 @@ function render(s: TabStatus): void {
 
   $("room-id").textContent = session.roomId;
   $("status").textContent =
-    session.status === "joined" ? "" : "(connecting...)";
+    session.status === "joined"
+      ? ""
+      : session.status === "reconnecting"
+        ? "(connection lost, reconnecting...)"
+        : "(connecting...)";
   $("members").textContent =
     session.members.length > 0
       ? `Watching: ${session.members.map((m) => m.name).join(", ")}`

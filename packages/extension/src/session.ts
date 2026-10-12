@@ -3,6 +3,7 @@ import {
   parseServerMessage,
   type ClientMessage,
   type IntentMessage,
+  type MediaMessage,
   type Member,
   type RoomState,
 } from "@wps/protocol";
@@ -17,7 +18,11 @@ export interface SocketLike {
   onclose: ((e: CloseEvent) => unknown) | null;
 }
 
-export type SessionStatus = "connecting" | "joined" | "closed";
+/**
+ * "reconnecting": the connection dropped after joining and a new one is on its
+ * way; the last room state is kept meanwhile. "closed": left, or never got in.
+ */
+export type SessionStatus = "connecting" | "joined" | "reconnecting" | "closed";
 
 /** What the popup and content scripts need to know about a tab's room. */
 export interface SessionSnapshot {
@@ -30,6 +35,8 @@ export interface SessionSnapshot {
   offsetMs: number;
   /** The last error the server sent, if any. */
   error: string | null;
+  /** Counts welcomes. A new one means the room state starts afresh (the server may have restarted). */
+  joins: number;
 }
 
 export interface SessionOptions {
@@ -41,23 +48,50 @@ export interface SessionOptions {
   now?: () => number;
   /** Called after anything in the snapshot changes. */
   onChange: (s: SessionSnapshot) => void;
+  /** Timer for reconnect delays. Defaults to setTimeout. */
+  setTimer?: (fn: () => void, ms: number) => unknown;
+  /** Cancels a timer from setTimer. Defaults to clearTimeout. */
+  clearTimer?: (handle: unknown) => void;
+  /** Random number in [0, 1), for spreading out reconnects. Defaults to Math.random. */
+  random?: () => number;
 }
 
 /** Clock samples taken right after joining, before settling into keepalive pings. */
 const INITIAL_PINGS = 5;
 /** How many recent clock samples to keep. */
 const MAX_SAMPLES = 8;
+/** Reconnect delays: 1 s, doubling up to 10 s, each plus up to 30% at random. */
+const RECONNECT_BASE_MS = 1_000;
+const RECONNECT_MAX_MS = 10_000;
+/**
+ * A connection that hasn't heard from the server for this long is treated as
+ * dead (a pong comes back for every ping, sent every 20 s). This catches
+ * connections that die silently, like after a laptop sleeps.
+ */
+const SILENCE_MS = 45_000;
 
 /**
  * One tab's membership of one room: owns the WebSocket, joins, keeps the
  * latest room state and member list, and estimates the server clock offset
  * from pings.
+ *
+ * If the connection drops after joining, it reconnects with growing delays
+ * and rejoins as the same member. A play, pause, seek or video switch made
+ * while disconnected is sent right after rejoining (the latest of each).
  */
 export class RoomSession {
-  private readonly socket: SocketLike;
+  private socket: SocketLike;
   private readonly now: () => number;
   private readonly samples: ClockSample[] = [];
   private snap: SessionSnapshot;
+  /** Failed reconnects in a row, for the backoff. */
+  private attempts = 0;
+  private retryTimer: unknown = null;
+  /** Local time the server was last heard from. */
+  private lastHeard: number;
+  private closed = false;
+  /** Sent after rejoining: what the user did while disconnected. */
+  private queued: { intent?: IntentMessage; media?: MediaMessage } = {};
 
   constructor(private readonly opts: SessionOptions) {
     this.now = opts.now ?? Date.now;
@@ -69,19 +103,61 @@ export class RoomSession {
       members: [],
       offsetMs: 0,
       error: null,
+      joins: 0,
     };
-    this.socket = opts.createSocket(opts.url);
-    this.socket.onopen = () => {
-      this.send({
+    this.lastHeard = this.now();
+    this.socket = this.connect();
+  }
+
+  private connect(): SocketLike {
+    const socket = this.opts.createSocket(this.opts.url);
+    socket.onopen = () => {
+      const join: ClientMessage = {
         type: "join",
         protocolVersion: PROTOCOL_VERSION,
-        roomId: opts.roomId,
-        name: opts.name,
-      });
+        roomId: this.opts.roomId,
+        name: this.opts.name,
+      };
+      if (this.snap.clientId) join.clientId = this.snap.clientId;
+      this.send(join);
+      const { intent, media } = this.queued;
+      this.queued = {};
+      if (media) this.send(media);
+      if (intent) this.send(intent);
       this.ping();
     };
-    this.socket.onmessage = (e) => this.onMessage(e.data);
-    this.socket.onclose = () => this.update({ status: "closed" });
+    socket.onmessage = (e) => {
+      this.lastHeard = this.now();
+      this.onMessage(e.data);
+    };
+    socket.onclose = () => this.dropped();
+    return socket;
+  }
+
+  /** The connection is gone: reconnect if we had joined, otherwise give up. */
+  private dropped(): void {
+    this.socket.onopen = this.socket.onmessage = this.socket.onclose = null;
+    this.socket.close();
+    if (this.closed) return;
+    if (this.snap.clientId === null) {
+      this.closed = true;
+      this.update({
+        status: "closed",
+        error: this.snap.error ?? "Couldn't reach the server.",
+      });
+      return;
+    }
+    const delay =
+      Math.min(RECONNECT_BASE_MS * 2 ** this.attempts, RECONNECT_MAX_MS) *
+      (1 + 0.3 * (this.opts.random ?? Math.random)());
+    this.attempts++;
+    this.update({ status: "reconnecting" });
+    const setTimer = this.opts.setTimer ?? setTimeout;
+    this.retryTimer = setTimer(() => {
+      this.retryTimer = null;
+      this.lastHeard = this.now();
+      this.socket = this.connect();
+    }, delay);
   }
 
   get snapshot(): SessionSnapshot {
@@ -95,22 +171,45 @@ export class RoomSession {
 
   sendIntent(intent: IntentMessage): void {
     if (this.snap.status === "joined") this.send(intent);
+    else if (this.snap.status === "reconnecting") this.queued.intent = intent;
   }
 
   /** Tell the room this tab is on another video (`url` is its mediaKey). */
   sendMedia(url: string): void {
     const state = this.snap.state;
-    if (this.snap.status === "joined" && state)
-      this.send({ type: "media", baseVersion: state.version, mediaUrl: url });
+    if (!state) return;
+    const msg: MediaMessage = {
+      type: "media",
+      baseVersion: state.version,
+      mediaUrl: url,
+    };
+    if (this.snap.status === "joined") this.send(msg);
+    else if (this.snap.status === "reconnecting") this.queued.media = msg;
   }
 
-  /** Send a clock-sync ping. Also keeps the connection (and service worker) alive. */
+  /**
+   * Send a clock-sync ping. Also keeps the connection (and service worker)
+   * alive, and notices a connection that has gone silent.
+   */
   ping(): void {
+    if (
+      this.snap.status === "joined" &&
+      this.now() - this.lastHeard > SILENCE_MS
+    ) {
+      this.dropped();
+      return;
+    }
     this.send({ type: "ping", clientTime: this.now() });
   }
 
   close(): void {
-    this.socket.onclose = null;
+    this.closed = true;
+    this.queued = {};
+    if (this.retryTimer !== null)
+      (this.opts.clearTimer ?? clearTimeout)(
+        this.retryTimer as ReturnType<typeof setTimeout>,
+      );
+    this.socket.onopen = this.socket.onmessage = this.socket.onclose = null;
     this.socket.close();
     this.update({ status: "closed" });
   }
@@ -135,6 +234,7 @@ export class RoomSession {
     const msg = parsed.message;
     switch (msg.type) {
       case "welcome":
+        this.attempts = 0;
         this.update({
           status: "joined",
           clientId: msg.clientId,
@@ -146,6 +246,7 @@ export class RoomSession {
               ? this.snap.offsetMs
               : msg.serverTime - this.now(),
           error: null,
+          joins: this.snap.joins + 1,
         });
         break;
       case "state":

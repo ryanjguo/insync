@@ -225,3 +225,40 @@ func TestTwoClients(t *testing.T) {
 		t.Fatalf("alice: got %+v, want presence with only her after bob left", p)
 	}
 }
+
+// TestQuietClientIsDropped: a member whose connection goes silent (no pings)
+// is removed, so the others don't keep seeing a ghost.
+func TestQuietClientIsDropped(t *testing.T) {
+	s := New("")
+	s.now = func() time.Time { return time.UnixMilli(5000) }
+	s.idleTimeout = 200 * time.Millisecond
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	alice, bob := dial(ctx, t, ts), dial(ctx, t, ts)
+
+	send(ctx, t, alice, `{"type":"join","protocolVersion":1,"roomId":"movie-night","name":"Alice","clientId":"alice-1"}`)
+	recv(ctx, t, alice)
+	send(ctx, t, bob, `{"type":"join","protocolVersion":1,"roomId":"movie-night","name":"Bob","clientId":"bob-1"}`)
+	recv(ctx, t, bob)
+	recv(ctx, t, alice) // presence: Alice and Bob
+
+	// Alice keeps pinging; Bob goes quiet.
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		send(ctx, t, alice, `{"type":"ping","clientTime":1}`)
+		switch m := recv(ctx, t, alice).(type) {
+		case protocol.Pong:
+		case protocol.Presence:
+			if len(m.Members) != 1 || m.Members[0].ClientID != "alice-1" {
+				t.Fatalf("got %+v, want only alice left", m)
+			}
+			return
+		default:
+			t.Fatalf("unexpected %+v", m)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("bob was never dropped")
+}

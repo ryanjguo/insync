@@ -125,6 +125,15 @@ describe("MediaFollower", () => {
     expect(announced).toEqual(["https://x.test/c"]);
   });
 
+  it("names the video again to a room that lost it", () => {
+    f.setPage("https://x.test/a");
+    f.setHasVideo(true);
+    f.setRoom("https://x.test/a");
+    f.setRoom(""); // the server restarted and the room started over
+    expect(announced).toEqual(["https://x.test/a"]);
+    expect(navigated).toEqual([]);
+  });
+
   it("starts over when the tab leaves its room", () => {
     f.setPage("https://x.test/a");
     f.setHasVideo(true);

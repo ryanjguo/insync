@@ -81,6 +81,15 @@ in each. Reload any tab that was already open before the extension loaded.
 - **Not supported yet:** Netflix, Disney+ and other DRM sites, which use custom
   players that fight outside control and would need a per-site adapter.
 
+### Dropped connections
+
+If the connection to the server drops (Wi-Fi blip, laptop sleep, server
+restart), the popup says it's reconnecting and the tab keeps playing along with
+the last state it had. It retries after 1 s, then 2, 4, 8 and 10 s, and rejoins
+as the same person; anything you play, pause or seek meanwhile is sent once
+it's back. The server drops connections that have been silent for a minute, so
+someone whose laptop went to sleep leaves the member list.
+
 ## Lint and test
 
 ```sh
