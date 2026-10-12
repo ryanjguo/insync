@@ -102,6 +102,8 @@ export class PlayerSync {
   /** Bumped on each load, so a stale settle timer does nothing. */
   private loads = 0;
   private disposed = false;
+  /** Whether this video already told a fresh room where it is. */
+  private seeded = false;
   /** Whether playbackRate is currently nudged away from the room's rate. */
   private nudged = false;
   private lastDriftCheck = -Infinity;
@@ -153,8 +155,19 @@ export class PlayerSync {
     if (state && this.state && state.version < this.state.version) return;
     this.state = state;
     if (!state || !state.playing) this.unnudge();
+    if (!state || state.version > 0) this.seeded = false;
     if (!state || this.held || this.settling) return;
 
+    if (state.version === 0) {
+      // Nobody has played, paused or seeked in this room yet, so its position
+      // means nothing: rather than send this video back to the start, start
+      // the room from where this video already is.
+      if (!this.seeded) {
+        this.seeded = true;
+        this.report(this.media.paused ? "pause" : "play", state);
+      }
+      return;
+    }
     this.seekToRoom(state);
     if (state.playing && this.media.paused) {
       this.media.play().catch(() => this.opts.onPlayBlocked?.());
@@ -270,6 +283,12 @@ export class PlayerSync {
           return;
         break;
     }
+    this.report(action, room);
+  }
+
+  /** Tell the room what this video just did. */
+  private report(action: IntentAction, room: RoomState): void {
+    const position = this.media.currentTime;
     this.opts.send({ type: action, baseVersion: room.version, position });
     // Assume the room will agree, so the next local event is judged against
     // what the user just did, not the state from before it. The server's reply
@@ -278,7 +297,7 @@ export class PlayerSync {
       ...room,
       playing: action === "seek" ? room.playing : action === "play",
       position,
-      updatedAt: now,
+      updatedAt: this.opts.serverNow(),
     };
   }
 }

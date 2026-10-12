@@ -69,6 +69,16 @@ describe("MediaFollower", () => {
     expect(navigated).toEqual([]);
   });
 
+  it("waits for the player to start a fresh room before naming the video", () => {
+    f.setPage("https://x.test/a");
+    f.setHasVideo(true);
+    f.setRoom("", true);
+    expect(announced).toEqual([]);
+    expect(f.onRoomVideo).toBe(true);
+    f.setRoom("", false); // the player told the room where it is
+    expect(announced).toEqual(["https://x.test/a"]);
+  });
+
   it("takes a tab that joins from another page to the room's video", () => {
     f.setPage("https://x.test/other");
     f.setHasVideo(true);

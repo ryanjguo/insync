@@ -72,6 +72,7 @@ export class MediaFollower {
   private settled: string | null = null;
   /** Where following the room landed, when a redirect made it differ from the room's URL. */
   private landed: string | null = null;
+  private fresh = false;
 
   constructor(private readonly opts: FollowerOptions) {}
 
@@ -86,9 +87,15 @@ export class MediaFollower {
     return !this.navigating && this.page !== null && this.page === this.landed;
   }
 
-  /** The room's video, or null when the tab leaves its room. */
-  setRoom(url: string | null): void {
+  /**
+   * The room's video, or null when the tab leaves its room. `fresh` says
+   * nobody has played anything in the room yet: the tab's player is about to
+   * set the room's position, and naming the video waits for that, so the room
+   * doesn't briefly sit at 0:00 on this tab's video.
+   */
+  setRoom(url: string | null, fresh = false): void {
     this.room = url;
+    this.fresh = fresh;
     this.check();
   }
 
@@ -142,6 +149,7 @@ export class MediaFollower {
       return;
     }
     if (!this.page || !this.hasVideo || this.page === this.settled) return;
+    if (room === "" && this.fresh) return;
     this.settled = this.page;
     this.opts.announce(this.page);
   }
