@@ -8,14 +8,59 @@
         font:
           14px system-ui,
           sans-serif;
-        width: 240px;
+        width: 260px;
         margin: 12px;
+      }
+      h1 {
+        font-size: 16px;
+        margin: 0 0 8px;
+      }
+      label {
+        display: block;
+        margin: 8px 0 2px;
+        color: #555;
+        font-size: 12px;
+      }
+      input {
+        box-sizing: border-box;
+        width: 100%;
+        padding: 4px 6px;
+      }
+      button {
+        margin-top: 10px;
+        padding: 4px 12px;
+      }
+      #error {
+        color: #b00020;
+      }
+      [hidden] {
+        display: none !important;
       }
     </style>
   </head>
   <body>
-    <h1 style="font-size: 16px">Watch Party Sync</h1>
-    <p id="status">Not in a room.</p>
+    <h1>Watch Party Sync</h1>
+
+    <form id="join-form">
+      <label for="room">Room code</label>
+      <input id="room" required pattern="[A-Za-z0-9_\-]{4,64}" />
+      <label for="name">Your name</label>
+      <input id="name" required maxlength="32" />
+      <details>
+        <summary>Server</summary>
+        <input id="server" required />
+      </details>
+      <button type="submit">Join</button>
+    </form>
+
+    <div id="in-room" hidden>
+      <p>Room <strong id="room-id"></strong> <span id="status"></span></p>
+      <p id="members"></p>
+      <p id="video-note"></p>
+      <button id="leave" type="button">Leave</button>
+    </div>
+
+    <p id="error"></p>
     <script type="module" src="popup.js"></script>
   </body>
 </html>

@@ -6,9 +6,11 @@ state; a Chrome extension steers the local player toward it. The goal is
 measured sync quality: drift numbers under simulated bad networks, not just
 "it works."
 
-> Status: skeleton. The server answers clock-sync pings and room joins; the
-> extension finds the page's video; the harness runs the drift controller
-> against simulated players with no network impairment yet.
+> Status: first demo. Two tabs in the same room mirror each other's play,
+> pause and seek through the server. No drift correction yet: each tab jumps to
+> the room's position when the room changes, and drifts freely in between. The
+> harness runs the drift controller against simulated players with no network
+> impairment yet.
 
 ## Layout
 
@@ -47,11 +49,19 @@ npm run build      # builds the extension into packages/extension/dist
 npm run harness    # simulated drift report
 ```
 
-To try the test page, put a video named `sample.mp4` in `testpage/` (video
-files are gitignored) and open http://localhost:8080/?room=test in two tabs.
+### Two-tab demo
 
-To load the extension, open `chrome://extensions`, enable Developer mode, and
-"Load unpacked" from `packages/extension/dist`.
+1. Put a video named `sample.mp4` in `testpage/` (video files are gitignored).
+2. Start the server as above and build the extension.
+3. Open `chrome://extensions`, enable Developer mode, and "Load unpacked" from
+   `packages/extension/dist`.
+4. Open http://localhost:8080 in two tabs. In each one, click the extension's
+   icon and join the same room code (the server field defaults to
+   `ws://localhost:8080/ws`).
+5. Play, pause or seek in either tab; the other follows.
+
+If a tab says Chrome blocked playback, click play once in that tab: Chrome only
+lets a page start sound after you've interacted with it.
 
 ## Lint and test
 

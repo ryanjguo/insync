@@ -82,6 +82,7 @@ A member is `{ "clientId": "...", "name": "..." }`.
 Playback-rate changes, buffering (`waiting` / `playing` reports), chat, and
 host-only mode. They are planned as later message types.
 
-The server currently answers `ping` and `join`. It accepts `play`, `pause` and
-`seek` as valid but replies with a `bad_message` error until rooms apply them,
-and `welcome` lists only the joiner until rooms track members.
+A connection joins one room; a second `join` on it is a `bad_message`. Sending
+`play`, `pause` or `seek` before joining is `not_joined`. A room holds up to 16
+members (`room_full` beyond that); a `join` with a `clientId` already in the
+room replaces that member's old connection.

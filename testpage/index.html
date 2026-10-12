@@ -15,47 +15,16 @@
         max-width: 100%;
         background: #000;
       }
-      pre {
-        background: #f4f4f4;
-        padding: 8px;
-      }
     </style>
   </head>
   <body>
     <h1>Watch Party Sync test page</h1>
     <p>
-      Drop a file named <code>sample.mp4</code> next to this page, then open it
-      in two tabs.
+      Drop a video named <code>sample.mp4</code> next to this page and open it
+      in two tabs. In each tab, click the extension's icon and join the same
+      room. Playing, pausing or seeking in one tab then does the same in the
+      other.
     </p>
     <video id="video" src="sample.mp4" controls></video>
-    <pre id="log">connecting...</pre>
-    <script>
-      // Milestone 1 skeleton: join a room and measure clock offset. Syncing the
-      // two tabs comes next.
-      const log = document.getElementById("log");
-      const room = new URLSearchParams(location.search).get("room") || "test";
-      const ws = new WebSocket(`ws://${location.host}/ws`);
-      ws.onopen = () => {
-        ws.send(
-          JSON.stringify({
-            type: "join",
-            protocolVersion: 1,
-            roomId: room,
-            name: "Test page",
-          }),
-        );
-        ws.send(JSON.stringify({ type: "ping", clientTime: Date.now() }));
-      };
-      ws.onmessage = (e) => {
-        const msg = JSON.parse(e.data);
-        if (msg.type === "pong") {
-          const t2 = Date.now();
-          msg.rttMs = t2 - msg.clientTime;
-          msg.offsetMs = msg.serverTime - (msg.clientTime + t2) / 2;
-        }
-        log.textContent += "\n" + JSON.stringify(msg);
-      };
-      ws.onclose = () => (log.textContent += "\nclosed");
-    </script>
   </body>
 </html>
