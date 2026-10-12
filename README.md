@@ -63,6 +63,23 @@ npm run harness    # simulated drift report
 If a tab says Chrome blocked playback, click play once in that tab: Chrome only
 lets a page start sound after you've interacted with it.
 
+### YouTube and other sites
+
+The same steps work on YouTube or any site that plays video in a `<video>`
+element. Keep the server running, reload the extension on `chrome://extensions`
+after rebuilding, then open the same video in two tabs and join the same room
+in each. Reload any tab that was already open before the extension loaded.
+
+- **Ads.** While an ad plays in one tab, that tab sits out (the popup says so)
+  and the others keep going. When the ad ends, it jumps to where the room is.
+- **Which video.** On YouTube only the main player is synced, never the hover
+  previews. Elsewhere the extension picks the visible, playing, largest video.
+- **Same video.** The room doesn't share which video is playing yet, so make
+  sure everyone has the same one open. Switching videos in one tab moves that
+  tab to the room's position; it doesn't take the others along.
+- **Not supported yet:** Netflix, Disney+ and other DRM sites, which use custom
+  players that fight outside control and would need a per-site adapter.
+
 ## Lint and test
 
 ```sh

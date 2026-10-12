@@ -19,6 +19,7 @@ interface Tab {
   session: RoomSession | null;
   ports: Set<chrome.runtime.Port>;
   playBlocked: boolean;
+  adShowing: boolean;
   pinger?: ReturnType<typeof setInterval>;
 }
 
@@ -27,7 +28,12 @@ const tabs = new Map<number, Tab>();
 function tab(id: number): Tab {
   let t = tabs.get(id);
   if (!t) {
-    t = { session: null, ports: new Set(), playBlocked: false };
+    t = {
+      session: null,
+      ports: new Set(),
+      playBlocked: false,
+      adShowing: false,
+    };
     tabs.set(id, t);
   }
   return t;
@@ -88,6 +94,7 @@ function status(tabId: number): TabStatus {
     session: t?.session?.snapshot ?? null,
     hasVideo: (t?.ports.size ?? 0) > 0,
     playBlocked: t?.playBlocked ?? false,
+    adShowing: t?.adShowing ?? false,
   };
 }
 
@@ -96,6 +103,7 @@ chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== PLAYER_PORT || tabId === undefined) return;
   const t = tab(tabId);
   t.ports.add(port);
+  t.adShowing = false;
   port.postMessage(roomUpdate(t.session?.snapshot ?? null));
   port.onMessage.addListener((msg: PlayerEvent) => {
     if (msg.kind === "intent") {
@@ -103,6 +111,8 @@ chrome.runtime.onConnect.addListener((port) => {
       t.session?.sendIntent(msg.intent);
     } else if (msg.kind === "playBlocked") {
       t.playBlocked = true;
+    } else if (msg.kind === "ad") {
+      t.adShowing = msg.showing;
     }
   });
   port.onDisconnect.addListener(() => t.ports.delete(port));
