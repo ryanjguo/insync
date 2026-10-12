@@ -121,7 +121,13 @@ function members(o: Obj, key: string, path: string): Member[] {
   return v.map((item, i) => {
     const p = `${path}.${key}[${i}]`;
     const m = asObject(item, p);
-    return { clientId: id(m, "clientId", p), name: name(m, "name", p) };
+    const member: Member = {
+      clientId: id(m, "clientId", p),
+      name: name(m, "name", p),
+    };
+    if (m.buffering !== undefined && m.buffering !== null)
+      member.buffering = boolean(m, "buffering", p);
+    return member;
   });
 }
 
@@ -181,13 +187,21 @@ export function parseClientMessage(raw: unknown): ParseResult<ClientMessage> {
         };
       case "ping":
         return { type: "ping", clientTime: finiteNumber(o, "clientTime", p) };
+      case "buffering":
+        return { type: "buffering", buffering: boolean(o, "buffering", p) };
       default:
         return fail(`unknown client message type "${o.type}"`);
     }
   });
 }
 
-const CAUSES: readonly StateCause[] = ["play", "pause", "seek", "media"];
+const CAUSES: readonly StateCause[] = [
+  "play",
+  "pause",
+  "seek",
+  "media",
+  "buffering",
+];
 
 /** Validates a message sent by the server. Accepts a JSON string or an already-parsed value. */
 export function parseServerMessage(raw: unknown): ParseResult<ServerMessage> {
@@ -208,7 +222,9 @@ export function parseServerMessage(raw: unknown): ParseResult<ServerMessage> {
         const cause = asObject(field(o, "cause", p), `${p}.cause`);
         const action = string(cause, "action", `${p}.cause`);
         if (!CAUSES.includes(action as StateCause))
-          fail(`${p}.cause.action must be play, pause, seek or media`);
+          fail(
+            `${p}.cause.action must be play, pause, seek, media or buffering`,
+          );
         return {
           type: "state",
           state: roomState(field(o, "state", p), `${p}.state`),

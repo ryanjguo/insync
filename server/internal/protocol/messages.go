@@ -29,6 +29,8 @@ const (
 	TypeSeek  = "seek"
 	TypeMedia = "media"
 	TypePing  = "ping"
+	// TypeBuffering is also a StateUpdate cause: the room paused for, or resumed after, buffering.
+	TypeBuffering = "buffering"
 
 	TypeWelcome  = "welcome"
 	TypeState    = "state"
@@ -56,6 +58,8 @@ type RoomState = room.State
 type Member struct {
 	ClientID string `json:"clientId"`
 	Name     string `json:"name"`
+	// Buffering is true while the member's video is stalled loading.
+	Buffering bool `json:"buffering,omitempty"`
 }
 
 // ClientMessage is any message a client sends to the server.
@@ -95,6 +99,11 @@ type Ping struct {
 	ClientTime float64 `json:"clientTime"`
 }
 
+// Buffering reports whether the client's video is stalled loading.
+type Buffering struct {
+	Buffering bool `json:"buffering"`
+}
+
 // ClientType implements ClientMessage.
 func (Join) ClientType() string { return TypeJoin }
 
@@ -107,6 +116,9 @@ func (Media) ClientType() string { return TypeMedia }
 // ClientType implements ClientMessage.
 func (Ping) ClientType() string { return TypePing }
 
+// ClientType implements ClientMessage.
+func (Buffering) ClientType() string { return TypeBuffering }
+
 // Server -> client.
 
 // Welcome answers Join with a full snapshot for a new, late or reconnecting client.
@@ -118,7 +130,8 @@ type Welcome struct {
 	Members    []Member  `json:"members"`
 }
 
-// Cause says which intent (play, pause, seek or media), from whom, produced a StateUpdate.
+// Cause says what produced a StateUpdate (play, pause, seek, media or
+// buffering) and which client caused it.
 type Cause struct {
 	Action string `json:"action"`
 	By     string `json:"by"`
@@ -205,6 +218,12 @@ func (m Media) MarshalJSON() ([]byte, error) {
 func (m Ping) MarshalJSON() ([]byte, error) {
 	type wire Ping
 	return marshalTyped(TypePing, wire(m))
+}
+
+// MarshalJSON adds the "type" field.
+func (m Buffering) MarshalJSON() ([]byte, error) {
+	type wire Buffering
+	return marshalTyped(TypeBuffering, wire(m))
 }
 
 // MarshalJSON adds the "type" field.

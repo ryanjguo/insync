@@ -43,6 +43,7 @@ function bind(): void {
     onPlayBlocked: () => post({ kind: "playBlocked" }),
     isHeld: () => youtube && isAdShowing(found),
     onHeldChange: (held) => post({ kind: "ad", showing: held }),
+    onBuffering: (buffering) => post({ kind: "buffering", buffering }),
   });
   sync.apply(room.state);
   connect();

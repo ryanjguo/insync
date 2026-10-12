@@ -45,7 +45,14 @@ function render(s: TabStatus): void {
         : "(connecting...)";
   $("members").textContent =
     session.members.length > 0
-      ? `Watching: ${session.members.map((m) => m.name).join(", ")}`
+      ? `Watching: ${session.members
+          .map((m) => (m.buffering ? `${m.name} (loading)` : m.name))
+          .join(", ")}`
+      : "";
+  const loading = session.members.filter((m) => m.buffering);
+  $("waiting").textContent =
+    joined && loading.length > 0 && session.state && !session.state.playing
+      ? `Paused until ${loading.map((m) => m.name).join(", ")} catch${loading.length === 1 ? "es" : ""} up.`
       : "";
   $("video-note").textContent =
     joined && !s.onRoomVideo

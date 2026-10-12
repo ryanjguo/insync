@@ -12,6 +12,7 @@ class FakeMedia implements Media {
   playbackRate = 1;
   seeking = false;
   duration = NaN;
+  readyState = 4;
   blockPlay = false;
   deferEvents = false;
   private time = 0;
@@ -59,6 +60,15 @@ class FakeMedia implements Media {
     this.time = 0;
     this.fire("loadedmetadata");
   }
+  /** What a player does when it runs out of data, and when it has enough again. */
+  stall(): void {
+    this.readyState = 2;
+    this.fire("waiting");
+  }
+  recover(): void {
+    this.readyState = 4;
+    this.fire("canplay");
+  }
   /** What a player does while playing: report progress. */
   tick(): void {
     this.fire("timeupdate");
@@ -76,6 +86,10 @@ class FakeMedia implements Media {
   private fire(type: string): void {
     if (this.deferEvents) this.pending.push(type);
     else this.dispatch(type);
+  }
+  /** Fire an event without changing anything. */
+  dispatchFor(type: string): void {
+    this.dispatch(type);
   }
   private dispatch(type: string): void {
     for (const fn of this.listeners.get(type) ?? []) fn();
@@ -101,6 +115,7 @@ describe("PlayerSync", () => {
   let blocked: number;
   let ad: boolean;
   let heldChanges: boolean[];
+  let buffering: boolean[];
   let timers: (() => void)[];
   let local: number;
   let sync: PlayerSync;
@@ -113,6 +128,7 @@ describe("PlayerSync", () => {
     blocked = 0;
     ad = false;
     heldChanges = [];
+    buffering = [];
     timers = [];
     local = 0;
     sync = new PlayerSync(media, {
@@ -122,6 +138,7 @@ describe("PlayerSync", () => {
       onPlayBlocked: () => blocked++,
       isHeld: () => ad,
       onHeldChange: (h) => heldChanges.push(h),
+      onBuffering: (b) => buffering.push(b),
       setTimer: (fn) => timers.push(fn),
     });
   });
@@ -417,6 +434,64 @@ describe("PlayerSync", () => {
       sync.apply(state({ position: 5 }));
       media.load(100);
       expect(sync.stats()).toMatchObject({ mode: "settling", driftSec: null });
+    });
+  });
+
+  describe("buffering", () => {
+    const playing = () =>
+      state({ playing: true, position: 0, updatedAt: now, version: 2 });
+
+    it("reports a stall that lasts, then recovery", () => {
+      sync.apply(playing());
+      media.stall();
+      expect(buffering).toEqual([]);
+      runTimers();
+      expect(buffering).toEqual([true]);
+      media.recover();
+      expect(buffering).toEqual([true, false]);
+    });
+
+    it("ignores a short stall", () => {
+      sync.apply(playing());
+      media.stall();
+      media.recover();
+      runTimers();
+      expect(buffering).toEqual([]);
+    });
+
+    it("keeps waiting through progress events until it can play", () => {
+      sync.apply(playing());
+      media.stall();
+      runTimers();
+      media.dispatchFor("progress");
+      expect(buffering).toEqual([true]);
+    });
+
+    it("ignores stalls while the room is paused", () => {
+      sync.apply(state({ position: 0, version: 2 }));
+      media.stall();
+      runTimers();
+      expect(buffering).toEqual([]);
+    });
+
+    it("stays buffering when the room pauses for it, and recovers while paused", () => {
+      sync.apply(playing());
+      media.userPlay();
+      media.stall();
+      runTimers();
+      sync.apply(state({ position: 0, version: 3 })); // the room waits
+      expect(media.paused).toBe(true);
+      expect(sent).toEqual([]); // the pause isn't echoed
+      media.recover();
+      expect(buffering).toEqual([true, false]);
+    });
+
+    it("stops reporting buffering when it leaves the room", () => {
+      sync.apply(playing());
+      media.stall();
+      runTimers();
+      sync.apply(null);
+      expect(buffering).toEqual([true, false]);
     });
   });
 });

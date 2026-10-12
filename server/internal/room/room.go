@@ -43,12 +43,17 @@ const (
 	Pause Action = "pause"
 	Seek  Action = "seek"
 	Media Action = "media"
+	// Buffer is the room pausing because a member is buffering, or resuming
+	// once nobody is.
+	Buffer Action = "buffering"
 )
 
 // Member is someone in the room.
 type Member struct {
 	ClientID string
 	Name     string
+	// Buffering is true while the member's video is stalled loading.
+	Buffering bool
 }
 
 // Event is something a Peer is told about. It is one of Joined,
@@ -89,9 +94,10 @@ type Peer interface {
 }
 
 type member struct {
-	name   string
-	peer   Peer
-	joined uint64 // join order, for a stable member list
+	name      string
+	peer      Peer
+	joined    uint64 // join order, for a stable member list
+	buffering bool
 }
 
 // Room is a single room. It is safe for concurrent use.
@@ -102,6 +108,9 @@ type Room struct {
 	state    State
 	members  map[string]*member
 	joinSeen uint64
+	// waiting is true while the room is paused for buffering members and
+	// should play again once none are left.
+	waiting bool
 }
 
 // New returns an empty, paused room at position 0.
@@ -125,7 +134,12 @@ func (r *Room) Join(clientID, name string, p Peer, nowMs int64) error {
 		return ErrFull
 	}
 	r.joinSeen++
-	r.members[clientID] = &member{name: name, peer: p, joined: r.joinSeen}
+	m := &member{name: name, peer: p, joined: r.joinSeen}
+	if old, rejoin := r.members[clientID]; rejoin {
+		// Still buffering until the member says otherwise: it reports again on rejoining.
+		m.buffering = old.buffering
+	}
+	r.members[clientID] = m
 	members := r.memberList()
 	p.Send(Joined{RoomID: r.ID, ClientID: clientID, ServerTime: nowMs, State: r.state, Members: members})
 	r.broadcast(MembersChanged{Members: members}, clientID)
@@ -134,7 +148,8 @@ func (r *Room) Join(clientID, name string, p Peer, nowMs int64) error {
 
 // Leave removes a member, but only if p is still their current peer: a
 // connection that was replaced by a reconnect doesn't remove its successor.
-func (r *Room) Leave(clientID string, p Peer) {
+// If the room was waiting only for them to finish buffering, it plays again.
+func (r *Room) Leave(clientID string, p Peer, nowMs int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	m, ok := r.members[clientID]
@@ -143,10 +158,12 @@ func (r *Room) Leave(clientID string, p Peer) {
 	}
 	delete(r.members, clientID)
 	r.broadcast(MembersChanged{Members: r.memberList()}, "")
+	r.resumeIfReady(clientID, nowMs)
 }
 
 // Apply makes the change, bumps the version and sends the new state to every
-// member. Changes apply in arrival order: the last one wins.
+// member. Changes apply in arrival order: the last one wins. A play or pause
+// overrides waiting for buffering members: someone chose what the room does.
 func (r *Room) Apply(a Action, position float64, by string, nowMs int64) State {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -154,8 +171,10 @@ func (r *Room) Apply(a Action, position float64, by string, nowMs int64) State {
 	switch a {
 	case Play:
 		s.Playing = true
+		r.waiting = false
 	case Pause:
 		s.Playing = false
+		r.waiting = false
 	case Seek:
 		// Keep playing or paused as it was.
 	}
@@ -188,6 +207,53 @@ func (r *Room) SetMedia(url, by string, nowMs int64) State {
 	return r.state
 }
 
+// SetBuffering records whether a member's video is stalled loading. When
+// someone starts buffering while the room plays, the room pauses for everyone
+// where it is; once nobody is buffering, it plays again from there.
+func (r *Room) SetBuffering(clientID string, buffering bool, nowMs int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	m, ok := r.members[clientID]
+	if !ok || m.buffering == buffering {
+		return
+	}
+	m.buffering = buffering
+	r.broadcast(MembersChanged{Members: r.memberList()}, "")
+	if !buffering {
+		r.resumeIfReady(clientID, nowMs)
+		return
+	}
+	s := &r.state
+	if !s.Playing {
+		return
+	}
+	s.Position = s.ExpectedPosition(nowMs)
+	s.Playing = false
+	s.UpdatedAt = nowMs
+	s.Version++
+	r.waiting = true
+	r.broadcast(StateChanged{State: r.state, Action: Buffer, By: clientID}, "")
+}
+
+// resumeIfReady plays the room again if it was waiting for buffering members
+// and none are left.
+func (r *Room) resumeIfReady(by string, nowMs int64) {
+	if !r.waiting {
+		return
+	}
+	for _, m := range r.members {
+		if m.buffering {
+			return
+		}
+	}
+	r.waiting = false
+	s := &r.state
+	s.Playing = true
+	s.UpdatedAt = nowMs
+	s.Version++
+	r.broadcast(StateChanged{State: r.state, Action: Buffer, By: by}, "")
+}
+
 // Members returns the current members in join order.
 func (r *Room) Members() []Member {
 	r.mu.Lock()
@@ -203,7 +269,8 @@ func (r *Room) memberList() []Member {
 	sort.Slice(ids, func(i, j int) bool { return r.members[ids[i]].joined < r.members[ids[j]].joined })
 	out := make([]Member, len(ids))
 	for i, id := range ids {
-		out[i] = Member{ClientID: id, Name: r.members[id].name}
+		m := r.members[id]
+		out[i] = Member{ClientID: id, Name: m.name, Buffering: m.buffering}
 	}
 	return out
 }

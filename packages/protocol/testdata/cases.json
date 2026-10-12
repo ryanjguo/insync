@@ -297,6 +297,41 @@
     }
   },
   {
+    "name": "buffering",
+    "direction": "client",
+    "valid": true,
+    "message": {
+      "type": "buffering",
+      "buffering": true
+    }
+  },
+  {
+    "name": "buffering done",
+    "direction": "client",
+    "valid": true,
+    "message": {
+      "type": "buffering",
+      "buffering": false
+    }
+  },
+  {
+    "name": "buffering missing flag",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "buffering"
+    }
+  },
+  {
+    "name": "buffering flag not boolean",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "buffering",
+      "buffering": "yes"
+    }
+  },
+  {
     "name": "unknown client type",
     "direction": "client",
     "valid": false,
@@ -614,6 +649,26 @@
     }
   },
   {
+    "name": "state caused by buffering",
+    "direction": "server",
+    "valid": true,
+    "message": {
+      "type": "state",
+      "state": {
+        "mediaUrl": "https://www.youtube.com/watch?v=abc",
+        "playing": true,
+        "position": 0,
+        "updatedAt": 1760300000000,
+        "rate": 1,
+        "version": 3
+      },
+      "cause": {
+        "action": "buffering",
+        "by": "client-a1"
+      }
+    }
+  },
+  {
     "name": "state bad cause action",
     "direction": "server",
     "valid": false,
@@ -683,6 +738,44 @@
         {
           "clientId": "client-b2",
           "name": "Alex"
+        }
+      ]
+    }
+  },
+  {
+    "name": "presence with a buffering member",
+    "direction": "server",
+    "valid": true,
+    "message": {
+      "type": "presence",
+      "members": [
+        {
+          "clientId": "client-a1",
+          "name": "Ryan"
+        },
+        {
+          "clientId": "client-b2",
+          "name": "Alex",
+          "buffering": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "presence member buffering not boolean",
+    "direction": "server",
+    "valid": false,
+    "message": {
+      "type": "presence",
+      "members": [
+        {
+          "clientId": "client-a1",
+          "name": "Ryan"
+        },
+        {
+          "clientId": "client-b2",
+          "name": "Alex",
+          "buffering": "no"
         }
       ]
     }
