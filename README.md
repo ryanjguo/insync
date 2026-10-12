@@ -74,9 +74,11 @@ in each. Reload any tab that was already open before the extension loaded.
   and the others keep going. When the ad ends, it jumps to where the room is.
 - **Which video.** On YouTube only the main player is synced, never the hover
   previews. Elsewhere the extension picks the visible, playing, largest video.
-- **Same video.** The room doesn't share which video is playing yet, so make
-  sure everyone has the same one open. Switching videos in one tab moves that
-  tab to the room's position; it doesn't take the others along.
+- **Switching video.** The room remembers which video it's on. Open another
+  video in any tab and every other tab in the room goes there too, starting
+  from the beginning and keeping play or pause as it was. Joining a room from
+  another page takes you to the room's video. On YouTube only watch and Shorts
+  pages count, so browsing the home page or search doesn't move anyone.
 - **Not supported yet:** Netflix, Disney+ and other DRM sites, which use custom
   players that fight outside control and would need a per-site adapter.
 

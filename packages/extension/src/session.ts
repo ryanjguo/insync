@@ -97,6 +97,13 @@ export class RoomSession {
     if (this.snap.status === "joined") this.send(intent);
   }
 
+  /** Tell the room this tab is on another video (`url` is its mediaKey). */
+  sendMedia(url: string): void {
+    const state = this.snap.state;
+    if (this.snap.status === "joined" && state)
+      this.send({ type: "media", baseVersion: state.version, mediaUrl: url });
+  }
+
   /** Send a clock-sync ping. Also keeps the connection (and service worker) alive. */
   ping(): void {
     this.send({ type: "ping", clientTime: this.now() });

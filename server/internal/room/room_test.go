@@ -117,6 +117,64 @@ func TestLastActionWins(t *testing.T) {
 	}
 }
 
+func TestSetMedia(t *testing.T) {
+	const a, b = "https://x.test/a", "https://x.test/b"
+	tests := []struct {
+		name      string
+		start     State
+		url       string
+		want      State
+		broadcast bool
+	}{
+		{
+			"the first video keeps where the room is",
+			State{Playing: true, Position: 95, UpdatedAt: 1000, Rate: 1, Version: 1},
+			a,
+			State{MediaURL: a, Playing: true, Position: 95, UpdatedAt: 1000, Rate: 1, Version: 2},
+			true,
+		},
+		{
+			"switching starts the new video at 0 and keeps playing",
+			State{MediaURL: a, Playing: true, Position: 95, UpdatedAt: 1000, Rate: 1, Version: 4},
+			b,
+			State{MediaURL: b, Playing: true, Position: 0, UpdatedAt: 9000, Rate: 1, Version: 5},
+			true,
+		},
+		{
+			"switching while paused stays paused",
+			State{MediaURL: a, Position: 95, UpdatedAt: 1000, Rate: 1, Version: 4},
+			b,
+			State{MediaURL: b, Position: 0, UpdatedAt: 9000, Rate: 1, Version: 5},
+			true,
+		},
+		{
+			"the same video changes nothing",
+			State{MediaURL: a, Playing: true, Position: 95, UpdatedAt: 1000, Rate: 1, Version: 4},
+			a,
+			State{MediaURL: a, Playing: true, Position: 95, UpdatedAt: 1000, Rate: 1, Version: 4},
+			false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := New("room")
+			p := &recorder{}
+			_ = r.Join("alice", "Alice", p, 0)
+			r.state = tt.start
+			if got := r.SetMedia(tt.url, "alice", 9000); got != tt.want {
+				t.Errorf("SetMedia returned %+v, want %+v", got, tt.want)
+			}
+			sc, ok := p.last().(StateChanged)
+			if ok != tt.broadcast {
+				t.Fatalf("broadcast = %v, want %v", ok, tt.broadcast)
+			}
+			if ok && (sc.Action != Media || sc.State != tt.want) {
+				t.Errorf("broadcast %+v, want media with %+v", sc, tt.want)
+			}
+		})
+	}
+}
+
 func TestJoinAndBroadcast(t *testing.T) {
 	r := New("room")
 	alice, bob := &recorder{}, &recorder{}

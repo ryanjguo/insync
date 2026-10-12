@@ -2,15 +2,17 @@
 // the tab's content scripts. Each tab is its own member of its room, so two
 // tabs in the same room sync with each other like two people would.
 
+import { MediaFollower } from "./follow";
 import {
   CONNECT_REQUEST,
   PLAYER_PORT,
+  type PageReport,
   type PlayerEvent,
   type PopupRequest,
   type RoomUpdate,
   type TabStatus,
 } from "./messages";
-import { RoomSession, type SessionSnapshot } from "./session";
+import { RoomSession } from "./session";
 
 /** Keepalive and clock-resync interval. A WebSocket message every 20 s also keeps the service worker alive. */
 const PING_INTERVAL_MS = 20_000;
@@ -20,6 +22,10 @@ interface Tab {
   ports: Set<chrome.runtime.Port>;
   playBlocked: boolean;
   adShowing: boolean;
+  /** Takes the tab to the room's video, and the room to the tab's. */
+  follower: MediaFollower;
+  /** The last update sent to the tab's frames. */
+  sent: RoomUpdate | null;
   pinger?: ReturnType<typeof setInterval>;
 }
 
@@ -28,24 +34,44 @@ const tabs = new Map<number, Tab>();
 function tab(id: number): Tab {
   let t = tabs.get(id);
   if (!t) {
-    t = {
+    const entry: Tab = {
       session: null,
       ports: new Set(),
       playBlocked: false,
       adShowing: false,
+      sent: null,
+      follower: new MediaFollower({
+        navigate: (url) => {
+          chrome.tabs.update(id, { url }).catch(() => {});
+        },
+        announce: (url) => entry.session?.sendMedia(url),
+      }),
     };
+    t = entry;
     tabs.set(id, t);
   }
   return t;
 }
 
-function roomUpdate(s: SessionSnapshot | null): RoomUpdate {
-  const joined = s?.status === "joined";
+/** What the tab's players should follow: the room's state, unless the tab is on another video. */
+function roomUpdate(t: Tab): RoomUpdate {
+  const s = t.session?.snapshot;
+  const following = s?.status === "joined" && t.follower.onRoomVideo;
   return {
     kind: "room",
-    state: joined ? s.state : null,
+    state: following ? s.state : null,
     offsetMs: s?.offsetMs ?? 0,
   };
+}
+
+/** Send the tab's frames the latest update, if it changed. */
+function push(t: Tab): void {
+  const update = roomUpdate(t);
+  const last = t.sent;
+  if (last && last.state === update.state && last.offsetMs === update.offsetMs)
+    return;
+  t.sent = update;
+  for (const port of t.ports) port.postMessage(update);
 }
 
 function leave(t: Tab): void {
@@ -53,7 +79,8 @@ function leave(t: Tab): void {
   t.session?.close();
   t.session = null;
   t.playBlocked = false;
-  for (const port of t.ports) port.postMessage(roomUpdate(null));
+  t.follower.setRoom(null);
+  push(t);
 }
 
 function join(
@@ -62,23 +89,16 @@ function join(
 ): void {
   const t = tab(tabId);
   leave(t);
-  let last: RoomUpdate | null = null;
   const session = new RoomSession({
     url: req.serverUrl,
     roomId: req.roomId,
     name: req.name,
     createSocket: (url) => new WebSocket(url),
     onChange: (snap) => {
-      // Forward only what the player cares about: state and clock offset.
-      const update = roomUpdate(snap);
-      if (
-        last &&
-        last.state === update.state &&
-        last.offsetMs === update.offsetMs
-      )
-        return;
-      last = update;
-      for (const port of t.ports) port.postMessage(update);
+      t.follower.setRoom(
+        snap.status === "joined" ? (snap.state?.mediaUrl ?? null) : null,
+      );
+      push(t);
     },
   });
   t.session = session;
@@ -95,6 +115,7 @@ function status(tabId: number): TabStatus {
     hasVideo: (t?.ports.size ?? 0) > 0,
     playBlocked: t?.playBlocked ?? false,
     adShowing: t?.adShowing ?? false,
+    onRoomVideo: t?.follower.onRoomVideo ?? false,
   };
 }
 
@@ -104,7 +125,8 @@ chrome.runtime.onConnect.addListener((port) => {
   const t = tab(tabId);
   t.ports.add(port);
   t.adShowing = false;
-  port.postMessage(roomUpdate(t.session?.snapshot ?? null));
+  t.follower.setHasVideo(true);
+  port.postMessage(roomUpdate(t));
   port.onMessage.addListener((msg: PlayerEvent) => {
     if (msg.kind === "intent") {
       t.playBlocked = false;
@@ -115,11 +137,23 @@ chrome.runtime.onConnect.addListener((port) => {
       t.adShowing = msg.showing;
     }
   });
-  port.onDisconnect.addListener(() => t.ports.delete(port));
+  port.onDisconnect.addListener(() => {
+    t.ports.delete(port);
+    t.follower.setHasVideo(t.ports.size > 0);
+  });
 });
 
 chrome.runtime.onMessage.addListener(
-  (req: PopupRequest, _sender, reply: (s: TabStatus) => void) => {
+  (req: PopupRequest | PageReport, sender, reply: (s: TabStatus) => void) => {
+    if (req.kind === "page") {
+      const tabId = sender.tab?.id;
+      if (tabId !== undefined && sender.frameId === 0) {
+        const t = tab(tabId);
+        t.follower.setPage(req.mediaKey);
+        push(t);
+      }
+      return;
+    }
     if (req.kind === "join") join(req.tabId, req);
     else if (req.kind === "leave") leave(tab(req.tabId));
     reply(status(req.tabId));

@@ -139,6 +139,12 @@ func (s *Server) handleMessage(c *client, msg protocol.ClientMessage) {
 			return
 		}
 		c.room.Apply(room.Action(m.Action), m.Position, c.id, nowMs)
+	case protocol.Media:
+		if c.room == nil {
+			c.send(protocol.Error{Code: protocol.ErrNotJoined, Message: "join a room first"})
+			return
+		}
+		c.room.SetMedia(m.MediaURL, c.id, nowMs)
 	}
 }
 

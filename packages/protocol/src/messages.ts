@@ -5,6 +5,9 @@ export const PROTOCOL_VERSION = 1;
 export const MIN_RATE = 0.25;
 export const MAX_RATE = 4;
 
+/** Longest `mediaUrl` a client may send. */
+export const MAX_MEDIA_URL = 2048;
+
 /** Authoritative playback state of a room, owned by the server (Go: room.State). */
 export interface RoomState {
   /** What's being watched. Empty until someone sets it. */
@@ -54,6 +57,14 @@ export interface SeekMessage {
   position: number;
 }
 
+/** Switch the room to another video (or name the first one). */
+export interface MediaMessage {
+  type: "media";
+  baseVersion: number;
+  /** http(s) URL of the page playing the video. */
+  mediaUrl: string;
+}
+
 export interface PingMessage {
   type: "ping";
   /** Client local time in ms. */
@@ -61,7 +72,8 @@ export interface PingMessage {
 }
 
 export type IntentMessage = PlayMessage | PauseMessage | SeekMessage;
-export type ClientMessage = JoinMessage | IntentMessage | PingMessage;
+export type ClientMessage =
+  JoinMessage | IntentMessage | MediaMessage | PingMessage;
 export type ClientMessageType = ClientMessage["type"];
 
 // Server -> client
@@ -77,10 +89,13 @@ export interface WelcomeMessage {
 
 export type IntentAction = IntentMessage["type"];
 
+/** What changed the room: a play, pause or seek, or a switch of video. */
+export type StateCause = IntentAction | MediaMessage["type"];
+
 export interface StateMessage {
   type: "state";
   state: RoomState;
-  cause: { action: IntentAction; by: string };
+  cause: { action: StateCause; by: string };
 }
 
 export interface PresenceMessage {

@@ -29,6 +29,7 @@ function render(s: TabStatus): void {
     session?.error ??
     (session?.status === "closed" ? "Disconnected from the server." : "");
   if (!active) return;
+  const joined = session.status === "joined";
 
   $("room-id").textContent = session.roomId;
   $("status").textContent =
@@ -37,13 +38,16 @@ function render(s: TabStatus): void {
     session.members.length > 0
       ? `Watching: ${session.members.map((m) => m.name).join(", ")}`
       : "";
-  $("video-note").textContent = !s.hasVideo
-    ? "No video found on this page yet."
-    : s.adShowing
-      ? "An ad is playing here. This tab catches up when it ends."
-      : s.playBlocked
-        ? "Chrome blocked playback here. Click play once in this tab."
-        : "";
+  $("video-note").textContent =
+    joined && !s.onRoomVideo
+      ? "This tab isn't on the room's video. Open a video here to switch everyone to it."
+      : !s.hasVideo
+        ? "No video found on this page yet."
+        : s.adShowing
+          ? "An ad is playing here. This tab catches up when it ends."
+          : s.playBlocked
+            ? "Chrome blocked playback here. Click play once in this tab."
+            : "";
 }
 
 async function main(): Promise<void> {

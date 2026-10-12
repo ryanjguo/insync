@@ -3,14 +3,15 @@
 
 import {
   ERROR_CODES,
+  MAX_MEDIA_URL,
   MAX_RATE,
   MIN_RATE,
   type ClientMessage,
   type ErrorCode,
-  type IntentAction,
   type Member,
   type RoomState,
   type ServerMessage,
+  type StateCause,
 } from "./messages";
 
 export type ParseResult<T> =
@@ -91,6 +92,14 @@ function name(o: Obj, key: string, path: string): string {
   return v;
 }
 
+function mediaUrl(o: Obj, key: string, path: string): string {
+  const v = string(o, key, path);
+  if (v.length > MAX_MEDIA_URL)
+    fail(`${path}.${key} must be at most ${MAX_MEDIA_URL} characters`);
+  if (!/^https?:\/\/./i.test(v)) fail(`${path}.${key} must be an http(s) URL`);
+  return v;
+}
+
 function roomState(v: unknown, path: string): RoomState {
   const o = asObject(v, path);
   const rate = finiteNumber(o, "rate", path);
@@ -164,6 +173,12 @@ export function parseClientMessage(raw: unknown): ParseResult<ClientMessage> {
           baseVersion: integer(o, "baseVersion", p, 0),
           position: position(o, "position", p),
         };
+      case "media":
+        return {
+          type: "media",
+          baseVersion: integer(o, "baseVersion", p, 0),
+          mediaUrl: mediaUrl(o, "mediaUrl", p),
+        };
       case "ping":
         return { type: "ping", clientTime: finiteNumber(o, "clientTime", p) };
       default:
@@ -172,7 +187,7 @@ export function parseClientMessage(raw: unknown): ParseResult<ClientMessage> {
   });
 }
 
-const INTENT_ACTIONS: readonly IntentAction[] = ["play", "pause", "seek"];
+const CAUSES: readonly StateCause[] = ["play", "pause", "seek", "media"];
 
 /** Validates a message sent by the server. Accepts a JSON string or an already-parsed value. */
 export function parseServerMessage(raw: unknown): ParseResult<ServerMessage> {
@@ -192,13 +207,13 @@ export function parseServerMessage(raw: unknown): ParseResult<ServerMessage> {
       case "state": {
         const cause = asObject(field(o, "cause", p), `${p}.cause`);
         const action = string(cause, "action", `${p}.cause`);
-        if (!INTENT_ACTIONS.includes(action as IntentAction))
-          fail(`${p}.cause.action must be play, pause or seek`);
+        if (!CAUSES.includes(action as StateCause))
+          fail(`${p}.cause.action must be play, pause, seek or media`);
         return {
           type: "state",
           state: roomState(field(o, "state", p), `${p}.state`),
           cause: {
-            action: action as IntentAction,
+            action: action as StateCause,
             by: id(cause, "by", `${p}.cause`),
           },
         };

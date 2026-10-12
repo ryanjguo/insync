@@ -55,6 +55,7 @@ func TestRoundTrip(t *testing.T) {
 		Intent{Action: TypePlay, BaseVersion: 3, Position: 12.5},
 		Intent{Action: TypePause, BaseVersion: 0, Position: 0},
 		Intent{Action: TypeSeek, BaseVersion: 9, Position: 3600},
+		Media{BaseVersion: 2, MediaURL: "https://www.youtube.com/watch?v=abc"},
 		Ping{ClientTime: 123.456},
 	}
 	for _, m := range clientMsgs {
@@ -73,6 +74,7 @@ func TestRoundTrip(t *testing.T) {
 	serverMsgs := []ServerMessage{
 		Welcome{ClientID: "client-a1", RoomID: "movie-night", ServerTime: 1760300000123, State: state, Members: members},
 		StateUpdate{State: state, Cause: Cause{Action: TypeSeek, By: "client-a1"}},
+		StateUpdate{State: state, Cause: Cause{Action: TypeMedia, By: "client-a1"}},
 		Presence{Members: members},
 		Pong{ClientTime: 1.5, ServerTime: 1760300000123},
 		Error{Code: ErrRoomFull, Message: "Room is full"},
@@ -128,7 +130,8 @@ func TestDecodeDetails(t *testing.T) {
 		{name: "missing field", in: `{"type":"seek","baseVersion":0}`, wantErr: "message.position is required"},
 		{name: "unknown type", in: `{"type":"rewind"}`, wantErr: `unknown client message type "rewind"`},
 		{name: "nested path", server: true, in: `{"type":"presence","members":[{"clientId":"abcd","name":""}]}`, wantErr: "message.members[0].name must be 1-32 characters"},
-		{name: "cause path", server: true, in: `{"type":"state","state":{"mediaUrl":"","playing":false,"position":0,"updatedAt":0,"rate":1,"version":1},"cause":{"action":"rewind","by":"abcd"}}`, wantErr: "message.cause.action must be play, pause or seek"},
+		{name: "cause path", server: true, in: `{"type":"state","state":{"mediaUrl":"","playing":false,"position":0,"updatedAt":0,"rate":1,"version":1},"cause":{"action":"rewind","by":"abcd"}}`, wantErr: "message.cause.action must be play, pause, seek or media"},
+		{name: "media URL scheme", in: `{"type":"media","baseVersion":0,"mediaUrl":"file:///etc/passwd"}`, wantErr: "message.mediaUrl must be an http(s) URL"},
 		{name: "state path", server: true, in: `{"type":"state","state":{"mediaUrl":"","playing":false,"position":0,"updatedAt":0,"rate":9,"version":1},"cause":{"action":"play","by":"abcd"}}`, wantErr: "message.state.rate must be between 0.25 and 4"},
 	}
 	for _, tc := range tests {
