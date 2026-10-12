@@ -4,12 +4,16 @@ package room
 
 import (
 	"errors"
+	"slices"
 	"sort"
 	"sync"
 )
 
 // MaxMembers is how many people can be in one room at once.
 const MaxMembers = 16
+
+// ChatHistory is how many recent chat lines a room keeps for people who join later.
+const ChatHistory = 50
 
 // ErrFull is returned by Join when the room already has MaxMembers members.
 var ErrFull = errors.New("room is full")
@@ -57,7 +61,7 @@ type Member struct {
 }
 
 // Event is something a Peer is told about. It is one of Joined,
-// StateChanged or MembersChanged.
+// StateChanged, MembersChanged or ChatLine.
 type Event interface{ isEvent() }
 
 // Joined is sent only to the member who just joined: everything they need to
@@ -83,7 +87,17 @@ type MembersChanged struct {
 	Members []Member
 }
 
+// ChatLine is a chat message someone sent to the room. SentAt is server time
+// in ms. Name is the sender's name when they sent it.
+type ChatLine struct {
+	From   string
+	Name   string
+	Text   string
+	SentAt int64
+}
+
 func (Joined) isEvent()         {}
+func (ChatLine) isEvent()       {}
 func (StateChanged) isEvent()   {}
 func (MembersChanged) isEvent() {}
 
@@ -111,6 +125,7 @@ type Room struct {
 	// waiting is true while the room is paused for buffering members and
 	// should play again once none are left.
 	waiting bool
+	chat    []ChatLine // the last ChatHistory lines, oldest first
 }
 
 // New returns an empty, paused room at position 0.
@@ -125,7 +140,7 @@ func (r *Room) Snapshot() State {
 	return r.state
 }
 
-// Join adds a member, sends them Joined and tells everyone else. Joining with a
+// Join adds a member, sends them Joined and the recent chat, and tells everyone else. Joining with a
 // client ID that is already in the room (a reconnect) replaces the old peer.
 func (r *Room) Join(clientID, name string, p Peer, nowMs int64) error {
 	r.mu.Lock()
@@ -142,6 +157,9 @@ func (r *Room) Join(clientID, name string, p Peer, nowMs int64) error {
 	r.members[clientID] = m
 	members := r.memberList()
 	p.Send(Joined{RoomID: r.ID, ClientID: clientID, ServerTime: nowMs, State: r.state, Members: members})
+	for _, line := range r.chat {
+		p.Send(line)
+	}
 	r.broadcast(MembersChanged{Members: members}, clientID)
 	return nil
 }
@@ -252,6 +270,23 @@ func (r *Room) resumeIfReady(by string, nowMs int64) {
 	s.UpdatedAt = nowMs
 	s.Version++
 	r.broadcast(StateChanged{State: r.state, Action: Buffer, By: by}, "")
+}
+
+// Chat sends a member's message to everyone in the room, the sender included,
+// and keeps it for people who join later.
+func (r *Room) Chat(clientID, text string, nowMs int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	m, ok := r.members[clientID]
+	if !ok {
+		return
+	}
+	line := ChatLine{From: clientID, Name: m.name, Text: text, SentAt: nowMs}
+	r.chat = append(r.chat, line)
+	if len(r.chat) > ChatHistory {
+		r.chat = slices.Clone(r.chat[len(r.chat)-ChatHistory:])
+	}
+	r.broadcast(line, "")
 }
 
 // Members returns the current members in join order.

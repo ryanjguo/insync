@@ -59,6 +59,7 @@ func TestRoundTrip(t *testing.T) {
 		Ping{ClientTime: 123.456},
 		Buffering{Buffering: true},
 		Buffering{Buffering: false},
+		Chat{Text: "brb, popcorn 🍿"},
 	}
 	for _, m := range clientMsgs {
 		data, err := json.Marshal(m)
@@ -81,6 +82,7 @@ func TestRoundTrip(t *testing.T) {
 		Presence{Members: members},
 		Presence{Members: []Member{{ClientID: "client-a1", Name: "Ryan", Buffering: true}}},
 		Pong{ClientTime: 1.5, ServerTime: 1760300000123},
+		ChatLine{From: "client-a1", Name: "Ryan", Text: "hi", SentAt: 1760300000123},
 		Error{Code: ErrRoomFull, Message: "Room is full"},
 	}
 	for _, m := range serverMsgs {
@@ -107,6 +109,7 @@ func TestMarshalShape(t *testing.T) {
 		{Join{ProtocolVersion: 1, RoomID: "room-1", Name: "Alex"}, `{"type":"join","protocolVersion":1,"roomId":"room-1","name":"Alex"}`},
 		{Presence{}, `{"type":"presence","members":[]}`},
 		{Buffering{Buffering: true}, `{"type":"buffering","buffering":true}`},
+		{ChatLine{From: "a-1", Name: "A", Text: "hi", SentAt: 5}, `{"type":"chat","from":"a-1","name":"A","text":"hi","sentAt":5}`},
 		{Presence{Members: []Member{{ClientID: "a-1", Name: "A"}, {ClientID: "b-1", Name: "B", Buffering: true}}}, `{"type":"presence","members":[{"clientId":"a-1","name":"A"},{"clientId":"b-1","name":"B","buffering":true}]}`},
 		{Pong{ClientTime: 1, ServerTime: 2}, `{"type":"pong","clientTime":1,"serverTime":2}`},
 	}
@@ -132,6 +135,8 @@ func TestDecodeDetails(t *testing.T) {
 		{name: "drops unknown fields", in: `{"type":"seek","baseVersion":1,"position":2,"x":true}`, want: Intent{Action: TypeSeek, BaseVersion: 1, Position: 2}},
 		{name: "trims name", in: `{"type":"join","protocolVersion":1,"roomId":"room-1","name":"  Alex "}`, want: Join{ProtocolVersion: 1, RoomID: "room-1", Name: "Alex"}},
 		{name: "counts characters not bytes", in: `{"type":"join","protocolVersion":1,"roomId":"room-1","name":"` + strings.Repeat("🍿", 32) + `"}`, want: Join{ProtocolVersion: 1, RoomID: "room-1", Name: strings.Repeat("🍿", 32)}},
+		{name: "trims chat", in: `{"type":"chat","text":"  hi \n"}`, want: Chat{Text: "hi"}},
+		{name: "chat too long", in: `{"type":"chat","text":"` + strings.Repeat("🍿", 501) + `"}`, wantErr: "message.text must be 1-500 characters"},
 		{name: "not JSON", in: `{nope`, wantErr: "message must be a JSON object"},
 		{name: "missing field", in: `{"type":"seek","baseVersion":0}`, wantErr: "message.position is required"},
 		{name: "unknown type", in: `{"type":"rewind"}`, wantErr: `unknown client message type "rewind"`},

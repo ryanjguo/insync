@@ -1,3 +1,4 @@
+import type { ChatLineMessage } from "@wps/protocol";
 import {
   DEBUG_OVERLAY_KEY,
   type PopupRequest,
@@ -15,6 +16,9 @@ const serverInput = $<HTMLInputElement>("server");
 const inRoom = $("in-room");
 const errorEl = $("error");
 const debugInput = $<HTMLInputElement>("debug-overlay");
+const chatLog = $("chat-log");
+const chatForm = $<HTMLFormElement>("chat-form");
+const chatInput = $<HTMLInputElement>("chat-input");
 
 function randomRoomCode(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(4));
@@ -23,6 +27,30 @@ function randomRoomCode(): string {
 
 async function request(req: PopupRequest): Promise<TabStatus> {
   return chrome.runtime.sendMessage<PopupRequest, TabStatus>(req);
+}
+
+/** The chat lines last drawn, so an unchanged log isn't redrawn (and scrolled) every refresh. */
+let shownChat: ChatLineMessage[] | null = null;
+
+function renderChat(lines: ChatLineMessage[], me: string | null): void {
+  const last = lines.at(-1);
+  if (
+    shownChat &&
+    shownChat.length === lines.length &&
+    shownChat.at(-1)?.sentAt === last?.sentAt
+  )
+    return;
+  shownChat = lines;
+  chatLog.replaceChildren(
+    ...lines.map((line) => {
+      const p = document.createElement("p");
+      const who = document.createElement("strong");
+      who.textContent = line.from === me ? "You" : line.name;
+      p.append(who, `: ${line.text}`);
+      return p;
+    }),
+  );
+  chatLog.scrollTop = chatLog.scrollHeight;
 }
 
 function render(s: TabStatus): void {
@@ -35,6 +63,8 @@ function render(s: TabStatus): void {
     (session?.status === "closed" ? "Disconnected from the server." : "");
   if (!active) return;
   const joined = session.status === "joined";
+  renderChat(session.chat, session.clientId);
+  chatInput.disabled = !joined;
 
   $("room-id").textContent = session.roomId;
   $("status").textContent =
@@ -101,12 +131,21 @@ async function main(): Promise<void> {
     });
     void request(req).then(render);
   });
+  // Keep the view fresh while the popup is open (members, connection, chat).
+  const refresh = () => request({ kind: "status", tabId }).then(render);
+  chatForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = chatInput.value.trim();
+    if (!text) return;
+    chatInput.value = "";
+    void request({ kind: "chat", tabId, text }).then(render);
+    // Our message comes back from the server: show it without waiting for the next refresh.
+    setTimeout(() => void refresh(), 200);
+  });
   $("leave").addEventListener("click", () => {
     void request({ kind: "leave", tabId }).then(render);
   });
 
-  // Keep the view fresh while the popup is open (members, connection).
-  const refresh = () => request({ kind: "status", tabId }).then(render);
   await refresh();
   setInterval(() => void refresh(), 1000);
 }

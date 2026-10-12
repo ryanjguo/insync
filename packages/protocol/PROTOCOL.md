@@ -66,6 +66,7 @@ sets it with `media`.
 | `media`     | `baseVersion`, `mediaUrl`                        | Switch the room to another video (see below).                         |
 | `ping`      | `clientTime`                                     | Clock sync probe; `clientTime` is the client's local time in ms.      |
 | `buffering` | `buffering`                                      | Whether this client's video is stalled loading (see below).           |
+| `chat`      | `text`                                           | Send a chat message to the room (1–500 characters after trimming).    |
 
 ## Server → client
 
@@ -75,6 +76,7 @@ sets it with `media`.
 | `state`    | `state`, `cause`                                       | Broadcast after every applied intent. `cause` is `{ "action": "play" \| "pause" \| "seek" \| "media" \| "buffering", "by": clientId }`. |
 | `presence` | `members`                                              | The member list changed (someone joined, left, or started or stopped buffering).                                                        |
 | `pong`     | `clientTime`, `serverTime`                             | Reply to `ping`: echoes `clientTime`; `serverTime` is server time when replying.                                                        |
+| `chat`     | `from`, `name`, `text`, `sentAt`                       | A member's chat message (see Chat below).                                                                                               |
 | `error`    | `code`, `message`                                      | `code` is one of `bad_message`, `unsupported_version`, `room_full`, `not_joined`.                                                       |
 
 A member is `{ "clientId": "...", "name": "...", "buffering": true }`;
@@ -110,9 +112,17 @@ broadcast as a `presence` with that member's `buffering` flag.
   someone's video is stuck.
 - A member who reconnects keeps their buffering flag until they report again.
 
+## Chat
+
+The server relays each `chat` to everyone in the room, the sender included,
+as a `chat` with the sender's `clientId` (`from`), their name at the time, and
+`sentAt` (server time). A room keeps its last 50 messages: someone joining (or
+rejoining) gets them right after `welcome`, oldest first. History lives in
+memory only and is lost when the server restarts.
+
 ## Not in this draft
 
-Playback-rate changes, chat, and host-only mode. They are planned as later message types.
+Playback-rate changes and host-only mode. They are planned as later message types.
 
 A connection joins one room; a second `join` on it is a `bad_message`. Sending
 `play`, `pause` or `seek` before joining is `not_joined`. A room holds up to 16

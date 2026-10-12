@@ -3,6 +3,7 @@
 
 import {
   ERROR_CODES,
+  MAX_CHAT,
   MAX_MEDIA_URL,
   MAX_RATE,
   MIN_RATE,
@@ -89,6 +90,13 @@ function name(o: Obj, key: string, path: string): string {
   const v = string(o, key, path).trim();
   if (v.length === 0 || [...v].length > MAX_NAME)
     fail(`${path}.${key} must be 1-${MAX_NAME} characters`);
+  return v;
+}
+
+function chatText(o: Obj, key: string, path: string): string {
+  const v = string(o, key, path).trim();
+  if (v.length === 0 || [...v].length > MAX_CHAT)
+    fail(`${path}.${key} must be 1-${MAX_CHAT} characters`);
   return v;
 }
 
@@ -189,6 +197,8 @@ export function parseClientMessage(raw: unknown): ParseResult<ClientMessage> {
         return { type: "ping", clientTime: finiteNumber(o, "clientTime", p) };
       case "buffering":
         return { type: "buffering", buffering: boolean(o, "buffering", p) };
+      case "chat":
+        return { type: "chat", text: chatText(o, "text", p) };
       default:
         return fail(`unknown client message type "${o.type}"`);
     }
@@ -241,6 +251,14 @@ export function parseServerMessage(raw: unknown): ParseResult<ServerMessage> {
           type: "pong",
           clientTime: finiteNumber(o, "clientTime", p),
           serverTime: integer(o, "serverTime", p),
+        };
+      case "chat":
+        return {
+          type: "chat",
+          from: id(o, "from", p),
+          name: name(o, "name", p),
+          text: chatText(o, "text", p),
+          sentAt: integer(o, "sentAt", p),
         };
       case "error": {
         const code = string(o, "code", p);

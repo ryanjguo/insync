@@ -8,6 +8,9 @@ export const MAX_RATE = 4;
 /** Longest `mediaUrl` a client may send. */
 export const MAX_MEDIA_URL = 2048;
 
+/** Longest chat message, in characters. */
+export const MAX_CHAT = 500;
+
 /** Authoritative playback state of a room, owned by the server (Go: room.State). */
 export interface RoomState {
   /** What's being watched. Empty until someone sets it. */
@@ -79,9 +82,21 @@ export interface BufferingMessage {
   buffering: boolean;
 }
 
+/** A chat message to the room. */
+export interface ChatMessage {
+  type: "chat";
+  /** 1-500 characters after trimming. */
+  text: string;
+}
+
 export type IntentMessage = PlayMessage | PauseMessage | SeekMessage;
 export type ClientMessage =
-  JoinMessage | IntentMessage | MediaMessage | PingMessage | BufferingMessage;
+  | JoinMessage
+  | IntentMessage
+  | MediaMessage
+  | PingMessage
+  | BufferingMessage
+  | ChatMessage;
 export type ClientMessageType = ClientMessage["type"];
 
 // Server -> client
@@ -123,6 +138,18 @@ export interface PongMessage {
   serverTime: number;
 }
 
+/** A member's chat message, relayed to the room (and to people joining later). */
+export interface ChatLineMessage {
+  type: "chat";
+  /** Sender's clientId. */
+  from: string;
+  /** Sender's display name when they sent it. */
+  name: string;
+  text: string;
+  /** Server time in epoch ms when the server received it. */
+  sentAt: number;
+}
+
 export const ERROR_CODES = [
   "bad_message",
   "unsupported_version",
@@ -138,7 +165,12 @@ export interface ErrorMessage {
 }
 
 export type ServerMessage =
-  WelcomeMessage | StateMessage | PresenceMessage | PongMessage | ErrorMessage;
+  | WelcomeMessage
+  | StateMessage
+  | PresenceMessage
+  | PongMessage
+  | ChatLineMessage
+  | ErrorMessage;
 export type ServerMessageType = ServerMessage["type"];
 
 /**

@@ -46,6 +46,8 @@ func DecodeClientMessage(data []byte) (ClientMessage, error) {
 		msg = Ping{ClientTime: r.float("clientTime")}
 	case TypeBuffering:
 		msg = Buffering{Buffering: r.boolean("buffering")}
+	case TypeChat:
+		msg = Chat{Text: r.chatText("text")}
 	default:
 		return nil, fmt.Errorf("unknown client message type %q", typ)
 	}
@@ -88,6 +90,8 @@ func DecodeServerMessage(data []byte) (ServerMessage, error) {
 		msg = Presence{Members: r.members("members")}
 	case TypePong:
 		msg = Pong{ClientTime: r.float("clientTime"), ServerTime: r.int("serverTime", math.MinInt64)}
+	case TypeChat:
+		msg = ChatLine{From: r.id("from"), Name: r.name("name"), Text: r.chatText("text"), SentAt: r.int("sentAt", math.MinInt64)}
 	case TypeError:
 		m := Error{Code: r.str("code"), Message: r.str("message")}
 		if r.err == nil && !errorCodes[m.Code] {
@@ -202,6 +206,15 @@ func (r *reader) name(key string) string {
 	v := strings.TrimSpace(r.str(key))
 	if n := utf8.RuneCountInString(v); r.err == nil && (n == 0 || n > maxName) {
 		r.fail(key, "must be 1-%d characters", maxName)
+	}
+	return v
+}
+
+// chatText reads a chat message: 1-MaxChat characters after trimming whitespace.
+func (r *reader) chatText(key string) string {
+	v := strings.TrimSpace(r.str(key))
+	if n := utf8.RuneCountInString(v); r.err == nil && (n == 0 || n > MaxChat) {
+		r.fail(key, "must be 1-%d characters", MaxChat)
 	}
 	return v
 }
