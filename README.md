@@ -6,11 +6,10 @@ state; a Chrome extension steers the local player toward it. The goal is
 measured sync quality: drift numbers under simulated bad networks, not just
 "it works."
 
-> Status: first demo. Two tabs in the same room mirror each other's play,
-> pause and seek through the server. No drift correction yet: each tab jumps to
-> the room's position when the room changes, and drifts freely in between. The
-> harness runs the drift controller against simulated players with no network
-> impairment yet.
+> Status: first demo. Tabs in the same room mirror each other's play, pause,
+> seek and choice of video through the server, and each tab keeps steering its
+> video back toward the room while it plays. The harness runs the drift
+> controller against simulated players with no network impairment yet.
 
 ## Layout
 
@@ -100,8 +99,11 @@ npm run format     # apply Prettier
   `P + (t − T0) × rate` while playing.
 - **Clock sync.** Clients ping the server, keep the lowest-RTT samples and
   estimate their offset NTP-style (`sync-core/src/clock.ts`).
-- **Drift correction.** Under ~50 ms off do nothing, up to ~1 s nudge
-  `playbackRate`, beyond that hard seek (`sync-core/src/drift.ts`).
+- **Drift correction.** While a video plays, the extension compares it with the
+  room's expected position twice a second. Under ~50 ms off it does nothing, up
+  to ~1 s it nudges `playbackRate` by 3% until it's back in line, beyond that it
+  seeks, at most once every 3 s so a slow-buffering video isn't stuck seeking
+  (`sync-core/src/drift.ts`, applied in `extension/src/player.ts`).
 
 ## Roadmap
 

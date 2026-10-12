@@ -4,11 +4,15 @@ import {
   type IntentMessage,
   type RoomState,
 } from "@wps/protocol";
+import { correct, defaultDriftConfig, type DriftConfig } from "@wps/sync-core";
 
 /** The parts of an HTMLVideoElement that PlayerSync uses. */
 export interface Media {
   currentTime: number;
+  playbackRate: number;
   readonly paused: boolean;
+  /** True while a seek is still loading. */
+  readonly seeking: boolean;
   /** Seconds; NaN until known, Infinity for live streams. */
   readonly duration: number;
   play(): Promise<void>;
@@ -40,7 +44,19 @@ export interface PlayerSyncOptions {
   settleMs?: number;
   /** Timer for the settle delay. Defaults to setTimeout. */
   setTimer?: (fn: () => void, ms: number) => unknown;
+  /** How to steer a playing video back toward the room. Defaults to sync-core's. */
+  drift?: DriftConfig;
+  /** Local clock in ms, for pacing drift corrections. Defaults to performance.now. */
+  now?: () => number;
 }
+
+/** Check drift at most this often while playing. Milliseconds. */
+const DRIFT_CHECK_MS = 500;
+/**
+ * After a corrective seek, wait this long before another one, so a video
+ * that is slow to buffer isn't sent seeking over and over. Milliseconds.
+ */
+const SEEK_COOLDOWN_MS = 3000;
 
 const EVENTS: Record<string, IntentAction> = {
   play: "play",
@@ -69,6 +85,11 @@ const END_MARGIN_SEC = 1;
  * player's own start-up events (and its restore-position seek) are ignored for
  * `settleMs`, then the video catches up with the room. While `isHeld` says an
  * ad is showing, the video is left alone entirely.
+ *
+ * Drift: while playing, the video's progress events check how far it is from
+ * where the room says it should be. Small drift is fixed by nudging
+ * playbackRate a few percent, large drift by seeking (sync-core's `correct`).
+ * Rate nudges are undone as soon as the video is back in line or stops.
  */
 export class PlayerSync {
   private state: RoomState | null = null;
@@ -81,6 +102,10 @@ export class PlayerSync {
   /** Bumped on each load, so a stale settle timer does nothing. */
   private loads = 0;
   private disposed = false;
+  /** Whether playbackRate is currently nudged away from the room's rate. */
+  private nudged = false;
+  private lastDriftCheck = -Infinity;
+  private lastDriftSeek = -Infinity;
 
   constructor(
     private readonly media: Media,
@@ -99,6 +124,7 @@ export class PlayerSync {
         event,
         () => this.checkHeld(),
       ]),
+      ["timeupdate", () => this.correctDrift()],
       ["loadedmetadata", () => this.onLoad()],
     ];
     for (const [event, fn] of this.listeners) media.addEventListener(event, fn);
@@ -106,6 +132,7 @@ export class PlayerSync {
 
   /** Stop listening to the video. */
   dispose(): void {
+    this.unnudge();
     this.disposed = true;
     for (const [event, fn] of this.listeners)
       this.media.removeEventListener(event, fn);
@@ -125,6 +152,7 @@ export class PlayerSync {
   apply(state: RoomState | null): void {
     if (state && this.state && state.version < this.state.version) return;
     this.state = state;
+    if (!state || !state.playing) this.unnudge();
     if (!state || this.held || this.settling) return;
 
     this.seekToRoom(state);
@@ -135,13 +163,65 @@ export class PlayerSync {
     }
   }
 
-  private seekToRoom(state: RoomState): void {
-    let target = expectedPosition(state, this.opts.serverNow());
+  /** Where the video should be now, kept short of the end of the video. */
+  private target(state: RoomState): number {
+    const target = expectedPosition(state, this.opts.serverNow());
     const end = this.media.duration;
     if (Number.isFinite(end) && end > 0)
-      target = Math.min(target, Math.max(0, end - END_MARGIN_SEC));
+      return Math.min(target, Math.max(0, end - END_MARGIN_SEC));
+    return target;
+  }
+
+  private seekToRoom(state: RoomState): void {
+    const target = this.target(state);
     if (Math.abs(this.media.currentTime - target) > this.applyTolerance)
       this.media.currentTime = target;
+  }
+
+  /** While playing along with the room, steer the video back toward it. */
+  private correctDrift(): void {
+    const state = this.state;
+    const media = this.media;
+    if (
+      !state?.playing ||
+      this.held ||
+      this.settling ||
+      media.paused ||
+      media.seeking
+    ) {
+      this.unnudge();
+      return;
+    }
+    const now = (this.opts.now ?? (() => performance.now()))();
+    if (now - this.lastDriftCheck < DRIFT_CHECK_MS) return;
+    this.lastDriftCheck = now;
+
+    const config = this.opts.drift ?? defaultDriftConfig;
+    const target = this.target(state);
+    const fix = correct(media.currentTime, target, state.rate, config);
+    if (fix.kind === "none") {
+      this.unnudge();
+    } else if (
+      fix.kind === "seek" &&
+      now - this.lastDriftSeek >= SEEK_COOLDOWN_MS
+    ) {
+      this.lastDriftSeek = now;
+      this.unnudge();
+      media.currentTime = fix.to;
+    } else {
+      // A rate nudge, or a seek still cooling down: nudge toward the room meanwhile.
+      const ahead = media.currentTime > target;
+      this.nudged = true;
+      media.playbackRate =
+        state.rate * (ahead ? 1 - config.nudge : 1 + config.nudge);
+    }
+  }
+
+  /** Put playbackRate back to the room's rate if drift correction changed it. */
+  private unnudge(): void {
+    if (!this.nudged) return;
+    this.nudged = false;
+    this.media.playbackRate = this.state?.rate ?? 1;
   }
 
   /** Re-check isHeld; when a hold ends, catch up with the room. */

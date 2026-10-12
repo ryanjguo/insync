@@ -9,6 +9,8 @@ import { PlayerSync, type Media } from "../src/player";
  */
 class FakeMedia implements Media {
   paused = true;
+  playbackRate = 1;
+  seeking = false;
   duration = NaN;
   blockPlay = false;
   deferEvents = false;
@@ -63,7 +65,7 @@ class FakeMedia implements Media {
   }
   /** Let time pass while playing, without firing events. */
   advance(sec: number): void {
-    if (!this.paused) this.time += sec;
+    if (!this.paused) this.time += sec * this.playbackRate;
   }
   flush(): void {
     const events = this.pending;
@@ -100,6 +102,7 @@ describe("PlayerSync", () => {
   let ad: boolean;
   let heldChanges: boolean[];
   let timers: (() => void)[];
+  let local: number;
   let sync: PlayerSync;
   const runTimers = () => timers.splice(0).forEach((fn) => fn());
 
@@ -111,7 +114,9 @@ describe("PlayerSync", () => {
     ad = false;
     heldChanges = [];
     timers = [];
+    local = 0;
     sync = new PlayerSync(media, {
+      now: () => local,
       serverNow: () => now,
       send: (i) => sent.push(i),
       onPlayBlocked: () => blocked++,
@@ -272,5 +277,70 @@ describe("PlayerSync", () => {
     runTimers();
     expect(media.currentTime).toBe(20);
     expect(sent).toEqual([]);
+  });
+
+  describe("drift correction", () => {
+    /** Play for `sec` seconds with the video running `speed` times real time, ticking every 250 ms. */
+    function play(sec: number, speed = 1): void {
+      for (let t = 0; t < sec; t += 0.25) {
+        now += 250;
+        local += 250;
+        media.advance(0.25 * speed);
+        media.tick();
+      }
+    }
+
+    it("nudges the rate when a little behind, then puts it back", () => {
+      sync.apply(state({ playing: true, position: 0, updatedAt: now }));
+      play(2, 0.9); // a slow player falls 0.2 s behind
+      expect(media.playbackRate).toBeCloseTo(1.03);
+      play(10);
+      expect(media.playbackRate).toBe(1);
+      const drift = media.currentTime - (now - 10_000) / 1000;
+      expect(Math.abs(drift)).toBeLessThan(0.05);
+      expect(sent).toEqual([]);
+    });
+
+    it("slows down when ahead", () => {
+      sync.apply(state({ playing: true, position: 0, updatedAt: now }));
+      play(2, 1.1);
+      expect(media.playbackRate).toBeCloseTo(0.97);
+    });
+
+    it("seeks when far off, at most once per cooldown", () => {
+      sync.apply(state({ playing: true, position: 0, updatedAt: now }));
+      // The video stalls while the room moves on.
+      const stall = (roomMs: number, localMs: number) => {
+        now += roomMs;
+        local += localMs;
+        media.tick();
+      };
+      stall(2000, 500);
+      expect(media.currentTime).toBeCloseTo(2); // seeked to the room
+      expect(sent).toEqual([]); // and not echoed as a user seek
+
+      stall(2000, 500); // still stuck: nudge rather than seek again so soon
+      expect(media.currentTime).toBeCloseTo(2);
+      expect(media.playbackRate).toBeCloseTo(1.03);
+
+      stall(0, 3000); // the cooldown has passed
+      expect(media.currentTime).toBeCloseTo(4);
+      expect(media.playbackRate).toBe(1);
+    });
+
+    it("leaves the rate alone while paused, held or settling", () => {
+      sync.apply(state({ position: 0 }));
+      media.playbackRate = 1.5; // the user's own choice
+      play(2);
+      expect(media.playbackRate).toBe(1.5);
+    });
+
+    it("undoes a nudge when the room pauses", () => {
+      sync.apply(state({ playing: true, position: 0, updatedAt: now }));
+      play(2, 0.9);
+      expect(media.playbackRate).not.toBe(1);
+      sync.apply(state({ position: 2, version: 1 }));
+      expect(media.playbackRate).toBe(1);
+    });
   });
 });
