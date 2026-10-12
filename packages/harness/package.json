@@ -3,11 +3,13 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Simulated clients that run the real sync-core against fake video clocks and report drift.",
+  "description": "Simulated viewers that run the extension's real sync code over an impaired network and report drift.",
   "scripts": {
-    "start": "tsx src/index.ts"
+    "start": "tsx src/index.ts",
+    "results": "tsx src/index.ts --write RESULTS.md && prettier --write RESULTS.md"
   },
   "dependencies": {
-    "@wps/sync-core": "*"
+    "@wps/extension": "*",
+    "@wps/protocol": "*"
   }
 }
