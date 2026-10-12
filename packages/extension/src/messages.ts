@@ -25,6 +25,13 @@ export type PlayerEvent =
   /** An ad started or ended. The video sits out the room until it ends. */
   | { kind: "ad"; showing: boolean };
 
+/** Top frame's content script -> service worker: the page it's on (on load and whenever its URL changes). */
+export interface PageReport {
+  kind: "page";
+  /** The page's mediaKey: null when it isn't a video page to share. */
+  mediaKey: string | null;
+}
+
 /** Popup -> service worker, answered with a TabStatus. */
 export type PopupRequest =
   | {
@@ -45,4 +52,6 @@ export interface TabStatus {
   playBlocked: boolean;
   /** An ad is playing in this tab, so it isn't following the room right now. */
   adShowing: boolean;
+  /** The tab is on the room's video (false while it's switching to or from it). */
+  onRoomVideo: boolean;
 }

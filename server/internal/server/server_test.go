@@ -163,9 +163,14 @@ func TestIntentBeforeJoin(t *testing.T) {
 	defer cancel()
 	conn := dial(ctx, t, ts)
 
-	send(ctx, t, conn, `{"type":"pause","baseVersion":0,"position":1}`)
-	if m := recv(ctx, t, conn); !isError(protocol.ErrNotJoined)(m) {
-		t.Fatalf("got %+v, want not_joined", m)
+	for _, msg := range []string{
+		`{"type":"pause","baseVersion":0,"position":1}`,
+		`{"type":"media","baseVersion":0,"mediaUrl":"https://x.test/v"}`,
+	} {
+		send(ctx, t, conn, msg)
+		if m := recv(ctx, t, conn); !isError(protocol.ErrNotJoined)(m) {
+			t.Fatalf("%s: got %+v, want not_joined", msg, m)
+		}
 	}
 }
 
@@ -202,6 +207,8 @@ func TestTwoClients(t *testing.T) {
 		{bob, `{"type":"play","baseVersion":0,"position":30}`, "play", "bob-1", 30},
 		{alice, `{"type":"pause","baseVersion":1,"position":31.5}`, "pause", "alice-1", 31.5},
 		{alice, `{"type":"seek","baseVersion":2,"position":5}`, "seek", "alice-1", 5},
+		{bob, `{"type":"media","baseVersion":3,"mediaUrl":"https://x.test/next"}`, "media", "bob-1", 5},
+		{alice, `{"type":"media","baseVersion":4,"mediaUrl":"https://x.test/other"}`, "media", "alice-1", 0},
 	} {
 		send(ctx, t, step.from, step.msg)
 		for name, conn := range map[string]*websocket.Conn{"alice": alice, "bob": bob} {

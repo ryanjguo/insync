@@ -42,6 +42,7 @@ const (
 	Play  Action = "play"
 	Pause Action = "pause"
 	Seek  Action = "seek"
+	Media Action = "media"
 )
 
 // Member is someone in the room.
@@ -162,6 +163,28 @@ func (r *Room) Apply(a Action, position float64, by string, nowMs int64) State {
 	s.UpdatedAt = nowMs
 	s.Version++
 	r.broadcast(StateChanged{State: r.state, Action: a, By: by}, "")
+	return r.state
+}
+
+// SetMedia switches the room to the video at url. The first video named in a
+// room keeps the position and play/pause already there (whoever names it is
+// usually partway through); any later switch starts the new video at 0,
+// keeping play/pause. Naming the current video changes nothing and isn't
+// broadcast.
+func (r *Room) SetMedia(url, by string, nowMs int64) State {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s := &r.state
+	if s.MediaURL == url {
+		return r.state
+	}
+	if s.MediaURL != "" {
+		s.Position = 0
+		s.UpdatedAt = nowMs
+	}
+	s.MediaURL = url
+	s.Version++
+	r.broadcast(StateChanged{State: r.state, Action: Media, By: by}, "")
 	return r.state
 }
 

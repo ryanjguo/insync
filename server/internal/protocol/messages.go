@@ -18,12 +18,16 @@ const (
 	MaxRate = 4.0
 )
 
+// MaxMediaURL is the longest MediaURL a client may send.
+const MaxMediaURL = 2048
+
 // Message types.
 const (
 	TypeJoin  = "join"
 	TypePlay  = "play"
 	TypePause = "pause"
 	TypeSeek  = "seek"
+	TypeMedia = "media"
 	TypePing  = "ping"
 
 	TypeWelcome  = "welcome"
@@ -78,6 +82,13 @@ type Intent struct {
 	Position    float64 `json:"position"`
 }
 
+// Media switches the room to another video, or names the first one.
+type Media struct {
+	BaseVersion int64 `json:"baseVersion"`
+	// MediaURL is the http(s) URL of the page playing the video.
+	MediaURL string `json:"mediaUrl"`
+}
+
 // Ping is a clock-sync probe.
 type Ping struct {
 	// ClientTime is the client's local time in ms.
@@ -89,6 +100,9 @@ func (Join) ClientType() string { return TypeJoin }
 
 // ClientType implements ClientMessage.
 func (m Intent) ClientType() string { return m.Action }
+
+// ClientType implements ClientMessage.
+func (Media) ClientType() string { return TypeMedia }
 
 // ClientType implements ClientMessage.
 func (Ping) ClientType() string { return TypePing }
@@ -104,7 +118,7 @@ type Welcome struct {
 	Members    []Member  `json:"members"`
 }
 
-// Cause says which intent, from whom, produced a StateUpdate.
+// Cause says which intent (play, pause, seek or media), from whom, produced a StateUpdate.
 type Cause struct {
 	Action string `json:"action"`
 	By     string `json:"by"`
@@ -179,6 +193,12 @@ func (m Join) MarshalJSON() ([]byte, error) {
 func (m Intent) MarshalJSON() ([]byte, error) {
 	type wire Intent
 	return marshalTyped(m.Action, wire(m))
+}
+
+// MarshalJSON adds the "type" field.
+func (m Media) MarshalJSON() ([]byte, error) {
+	type wire Media
+	return marshalTyped(TypeMedia, wire(m))
 }
 
 // MarshalJSON adds the "type" field.

@@ -6,13 +6,17 @@ import (
 	"math"
 	"regexp"
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
 // Validation rules match packages/protocol/src/validate.ts. Unknown fields are dropped;
 // unknown types, missing or null fields and out-of-range values are rejected.
 
-var idPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{4,64}$`)
+var (
+	idPattern  = regexp.MustCompile(`^[A-Za-z0-9_-]{4,64}$`)
+	urlPattern = regexp.MustCompile(`(?i)^https?://.`)
+)
 
 const maxName = 32
 
@@ -36,6 +40,8 @@ func DecodeClientMessage(data []byte) (ClientMessage, error) {
 		msg = m
 	case TypePlay, TypePause, TypeSeek:
 		msg = Intent{Action: typ, BaseVersion: r.int("baseVersion", 0), Position: r.position("position")}
+	case TypeMedia:
+		msg = Media{BaseVersion: r.int("baseVersion", 0), MediaURL: r.mediaURL("mediaUrl")}
 	case TypePing:
 		msg = Ping{ClientTime: r.float("clientTime")}
 	default:
@@ -69,9 +75,9 @@ func DecodeServerMessage(data []byte) (ServerMessage, error) {
 		if cause != nil {
 			m.Cause = Cause{Action: cause.str("action"), By: cause.id("by")}
 			switch m.Cause.Action {
-			case TypePlay, TypePause, TypeSeek:
+			case TypePlay, TypePause, TypeSeek, TypeMedia:
 			default:
-				cause.fail("action", "must be play, pause or seek")
+				cause.fail("action", "must be play, pause, seek or media")
 			}
 			r.sub(cause)
 		}
@@ -194,6 +200,21 @@ func (r *reader) name(key string) string {
 	v := strings.TrimSpace(r.str(key))
 	if n := utf8.RuneCountInString(v); r.err == nil && (n == 0 || n > maxName) {
 		r.fail(key, "must be 1-%d characters", maxName)
+	}
+	return v
+}
+
+// mediaURL reads an http(s) URL of at most MaxMediaURL characters. Length is
+// counted in UTF-16 units, as JavaScript's String.length does.
+func (r *reader) mediaURL(key string) string {
+	v := r.str(key)
+	if r.err != nil {
+		return v
+	}
+	if len(utf16.Encode([]rune(v))) > MaxMediaURL {
+		r.fail(key, "must be at most %d characters", MaxMediaURL)
+	} else if !urlPattern.MatchString(v) {
+		r.fail(key, "must be an http(s) URL")
 	}
 	return v
 }

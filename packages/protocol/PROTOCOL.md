@@ -48,7 +48,7 @@ position at server time `t` is:
 
 A scheduled start ("play from P at server time T + lead") is a playing state
 whose `updatedAt` is in the future. `mediaUrl` is an empty string until someone
-sets it.
+sets it with `media`.
 
 ## Identifiers
 
@@ -63,19 +63,34 @@ sets it.
 | `play`  | `baseVersion`, `position`                        | Start playing from `position`.                                        |
 | `pause` | `baseVersion`, `position`                        | Pause at `position`.                                                  |
 | `seek`  | `baseVersion`, `position`                        | Jump to `position`, keeping play/pause as is.                         |
+| `media` | `baseVersion`, `mediaUrl`                        | Switch the room to another video (see below).                         |
 | `ping`  | `clientTime`                                     | Clock sync probe; `clientTime` is the client's local time in ms.      |
 
 ## Server → client
 
-| `type`     | Fields                                                 | Meaning                                                                                                       |
-| ---------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `welcome`  | `clientId`, `roomId`, `serverTime`, `state`, `members` | Reply to `join`: full snapshot for a new, late or reconnecting client.                                        |
-| `state`    | `state`, `cause`                                       | Broadcast after every applied intent. `cause` is `{ "action": "play" \| "pause" \| "seek", "by": clientId }`. |
-| `presence` | `members`                                              | The member list changed (someone joined or left).                                                             |
-| `pong`     | `clientTime`, `serverTime`                             | Reply to `ping`: echoes `clientTime`; `serverTime` is server time when replying.                              |
-| `error`    | `code`, `message`                                      | `code` is one of `bad_message`, `unsupported_version`, `room_full`, `not_joined`.                             |
+| `type`     | Fields                                                 | Meaning                                                                                                                  |
+| ---------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `welcome`  | `clientId`, `roomId`, `serverTime`, `state`, `members` | Reply to `join`: full snapshot for a new, late or reconnecting client.                                                   |
+| `state`    | `state`, `cause`                                       | Broadcast after every applied intent. `cause` is `{ "action": "play" \| "pause" \| "seek" \| "media", "by": clientId }`. |
+| `presence` | `members`                                              | The member list changed (someone joined or left).                                                                        |
+| `pong`     | `clientTime`, `serverTime`                             | Reply to `ping`: echoes `clientTime`; `serverTime` is server time when replying.                                         |
+| `error`    | `code`, `message`                                      | `code` is one of `bad_message`, `unsupported_version`, `room_full`, `not_joined`.                                        |
 
 A member is `{ "clientId": "...", "name": "..." }`.
+
+## Switching video
+
+`mediaUrl` is the http(s) URL of the page playing the video (at most 2048
+characters), so other clients can open the same page. Clients send a canonical
+form (for YouTube, `https://www.youtube.com/watch?v=<id>`) so the same video
+always has the same URL.
+
+- If the room has no `mediaUrl` yet, `media` only names the video: position and
+  play/pause are kept.
+- If it names a different video, the room moves to it at position 0, keeping
+  play/pause as is.
+- If it names the video the room already has, nothing changes and nothing is
+  broadcast.
 
 ## Not in this draft
 

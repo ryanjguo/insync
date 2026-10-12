@@ -1,9 +1,11 @@
 // Content script, in every frame. Once the frame has a video, it opens a port
 // to the service worker and keeps that video following the tab's room.
 
+import { mediaKey } from "./follow";
 import {
   CONNECT_REQUEST,
   PLAYER_PORT,
+  type PageReport,
   type PlayerEvent,
   type RoomUpdate,
 } from "./messages";
@@ -53,10 +55,32 @@ function connect(): void {
   });
 }
 
+/** The top frame tells the service worker which page the tab is on, so the room can follow it. */
+const isTop = window === window.top;
+let reportedHref: string | null = null;
+
+function reportPage(force = false): void {
+  if (!isTop || !chrome.runtime?.id) return;
+  if (!force && location.href === reportedHref) return;
+  reportedHref = location.href;
+  const report: PageReport = {
+    kind: "page",
+    mediaKey: mediaKey(location.href),
+  };
+  chrome.runtime.sendMessage(report).catch(() => {});
+}
+
 // When a tab joins a room, the service worker asks its frames to connect.
 chrome.runtime.onMessage.addListener((msg: unknown) => {
-  if (msg === CONNECT_REQUEST) connect();
+  if (msg === CONNECT_REQUEST) {
+    connect();
+    reportPage(true);
+  }
 });
+
+reportPage(true);
+// Sites like YouTube switch videos without loading a new page, so watch the URL.
+setInterval(() => reportPage(), 1000);
 
 bind();
 // Pages often add (or replace) their video after load. Re-check at most a few

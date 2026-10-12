@@ -133,6 +133,15 @@ describe("RoomSession", () => {
     ]);
   });
 
+  it("tells the room about a video switch once joined", () => {
+    session.sendMedia("https://x.test/a");
+    welcome();
+    session.sendMedia("https://x.test/b");
+    expect(socket.sent).toEqual([
+      { type: "media", baseVersion: 0, mediaUrl: "https://x.test/b" },
+    ]);
+  });
+
   it("records server errors and closes cleanly", () => {
     socket.receive({
       type: "error",
