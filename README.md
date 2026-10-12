@@ -8,8 +8,8 @@ measured sync quality: drift numbers under simulated bad networks, not just
 
 > Status: first demo. Tabs in the same room mirror each other's play, pause,
 > seek and choice of video through the server, and each tab keeps steering its
-> video back toward the room while it plays. The harness runs the drift
-> controller against simulated players with no network impairment yet.
+> video back toward the room while it plays. The harness measures drift over
+> simulated bad networks: see [sync drift results](packages/harness/RESULTS.md).
 
 ## Layout
 
@@ -45,7 +45,7 @@ cd server && go run ./cmd/server -static ../testpage
 # TypeScript
 npm install
 npm run build      # builds the extension into packages/extension/dist
-npm run harness    # simulated drift report
+npm run harness    # simulated drift report (see packages/harness/RESULTS.md)
 ```
 
 ### Two-tab demo
