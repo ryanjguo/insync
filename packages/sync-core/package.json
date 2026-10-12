@@ -4,5 +4,8 @@
   "private": true,
   "type": "module",
   "description": "Pure sync logic (clock offset, drift control). No DOM access, so it runs in the extension and in Node.",
-  "exports": "./src/index.ts"
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@wps/protocol": "*"
+  }
 }

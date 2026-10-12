@@ -16,9 +16,10 @@ measured sync quality: drift numbers under simulated bad networks, not just
 server/                 Go sync server (rooms, WebSocket, clock-sync pings)
   cmd/server/           entry point
   internal/room/        authoritative room state and expected position
-  internal/protocol/    JSON message types
+  internal/protocol/    JSON message types and validation (mirrors packages/protocol)
   internal/server/      HTTP + WebSocket handlers
 packages/
+  protocol/             wire message types and validators; PROTOCOL.md is the spec
   sync-core/            pure TypeScript sync logic (clock offset, drift control), no DOM
   extension/            Chrome Manifest V3 extension (content script, service worker, popup)
   harness/              simulated clients that measure drift

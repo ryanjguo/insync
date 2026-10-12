@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/coder/websocket/wsjson"
 
 	"github.com/ryanjguo/insync/server/internal/protocol"
 )
@@ -50,46 +49,83 @@ func TestWebSocket(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		send  protocol.Message
-		check func(protocol.Message) bool
+		send  string
+		check func(protocol.ServerMessage) bool
 	}{
 		{
 			"ping echoes client time and stamps server time",
-			protocol.Message{Type: protocol.TypePing, ClientTime: 1234},
-			func(m protocol.Message) bool {
-				return m.Type == protocol.TypePong && m.ClientTime == 1234 && m.ServerTime == 5000
+			`{"type":"ping","clientTime":1234.5}`,
+			func(m protocol.ServerMessage) bool {
+				return m == protocol.Pong{ClientTime: 1234.5, ServerTime: 5000}
 			},
 		},
 		{
-			"join returns a state snapshot",
-			protocol.Message{Type: protocol.TypeJoin, RoomID: "abc"},
-			func(m protocol.Message) bool {
-				return m.Type == protocol.TypeState && m.RoomID == "abc" && m.State != nil && m.State.Rate == 1
+			"join returns a welcome snapshot",
+			`{"type":"join","protocolVersion":1,"roomId":"room-abc","name":"Ryan"}`,
+			func(m protocol.ServerMessage) bool {
+				w, ok := m.(protocol.Welcome)
+				return ok && w.RoomID == "room-abc" && len(w.ClientID) == 32 &&
+					w.ServerTime == 5000 && w.State.Rate == 1 &&
+					len(w.Members) == 1 && w.Members[0].Name == "Ryan"
 			},
 		},
 		{
-			"join without a room is an error",
-			protocol.Message{Type: protocol.TypeJoin},
-			func(m protocol.Message) bool { return m.Type == protocol.TypeError },
+			"rejoin keeps the client ID",
+			`{"type":"join","protocolVersion":1,"roomId":"room-abc","name":"Ryan","clientId":"client-a1"}`,
+			func(m protocol.ServerMessage) bool {
+				w, ok := m.(protocol.Welcome)
+				return ok && w.ClientID == "client-a1"
+			},
 		},
 		{
-			"unknown type is an error",
-			protocol.Message{Type: "bogus"},
-			func(m protocol.Message) bool { return m.Type == protocol.TypeError },
+			"join with another protocol version is refused",
+			`{"type":"join","protocolVersion":2,"roomId":"room-abc","name":"Ryan"}`,
+			isError(protocol.ErrUnsupportedVersion),
+		},
+		{
+			"join without a room is a bad message",
+			`{"type":"join","protocolVersion":1,"name":"Ryan"}`,
+			isError(protocol.ErrBadMessage),
+		},
+		{
+			"unknown type is a bad message",
+			`{"type":"bogus"}`,
+			isError(protocol.ErrBadMessage),
+		},
+		{
+			"malformed JSON is a bad message",
+			`{nope`,
+			isError(protocol.ErrBadMessage),
+		},
+		{
+			"play is not handled yet",
+			`{"type":"play","baseVersion":0,"position":1}`,
+			isError(protocol.ErrBadMessage),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := wsjson.Write(ctx, conn, tt.send); err != nil {
+			if err := conn.Write(ctx, websocket.MessageText, []byte(tt.send)); err != nil {
 				t.Fatal(err)
 			}
-			var got protocol.Message
-			if err := wsjson.Read(ctx, conn, &got); err != nil {
+			_, data, err := conn.Read(ctx)
+			if err != nil {
 				t.Fatal(err)
+			}
+			got, err := protocol.DecodeServerMessage(data)
+			if err != nil {
+				t.Fatalf("server sent an invalid message %s: %v", data, err)
 			}
 			if !tt.check(got) {
-				t.Fatalf("unexpected reply: %+v", got)
+				t.Fatalf("unexpected reply: %s", data)
 			}
 		})
+	}
+}
+
+func isError(code string) func(protocol.ServerMessage) bool {
+	return func(m protocol.ServerMessage) bool {
+		e, ok := m.(protocol.Error)
+		return ok && e.Code == code
 	}
 }

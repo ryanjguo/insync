@@ -1,0 +1,671 @@
+[
+  {
+    "name": "join",
+    "direction": "client",
+    "valid": true,
+    "message": {
+      "type": "join",
+      "protocolVersion": 1,
+      "roomId": "movie-night",
+      "name": "Ryan"
+    }
+  },
+  {
+    "name": "join with clientId for reconnect",
+    "direction": "client",
+    "valid": true,
+    "message": {
+      "type": "join",
+      "protocolVersion": 1,
+      "roomId": "movie-night",
+      "name": "Ryan",
+      "clientId": "3f2b8c1e-aa10-4c8e-9d1f-0b7e2a6c5d44"
+    }
+  },
+  {
+    "name": "join ignores unknown fields",
+    "direction": "client",
+    "valid": true,
+    "message": {
+      "type": "join",
+      "protocolVersion": 1,
+      "roomId": "movie-night",
+      "name": "Ryan",
+      "extra": "ok"
+    }
+  },
+  {
+    "name": "join missing roomId",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "join",
+      "protocolVersion": 1,
+      "name": "Ryan"
+    }
+  },
+  {
+    "name": "join roomId too short",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "join",
+      "protocolVersion": 1,
+      "roomId": "abc",
+      "name": "Ryan"
+    }
+  },
+  {
+    "name": "join roomId with spaces",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "join",
+      "protocolVersion": 1,
+      "roomId": "movie night",
+      "name": "Ryan"
+    }
+  },
+  {
+    "name": "join blank name",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "join",
+      "protocolVersion": 1,
+      "roomId": "movie-night",
+      "name": "   "
+    }
+  },
+  {
+    "name": "join name too long",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "join",
+      "protocolVersion": 1,
+      "roomId": "movie-night",
+      "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    }
+  },
+  {
+    "name": "join protocolVersion 0",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "join",
+      "protocolVersion": 0,
+      "roomId": "movie-night",
+      "name": "Ryan"
+    }
+  },
+  {
+    "name": "join protocolVersion not integer",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "join",
+      "protocolVersion": 1.5,
+      "roomId": "movie-night",
+      "name": "Ryan"
+    }
+  },
+  {
+    "name": "join bad clientId",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "join",
+      "protocolVersion": 1,
+      "roomId": "movie-night",
+      "name": "Ryan",
+      "clientId": "no!"
+    }
+  },
+  {
+    "name": "play",
+    "direction": "client",
+    "valid": true,
+    "message": {
+      "type": "play",
+      "baseVersion": 3,
+      "position": 12.5
+    }
+  },
+  {
+    "name": "play from zero",
+    "direction": "client",
+    "valid": true,
+    "message": {
+      "type": "play",
+      "baseVersion": 0,
+      "position": 0
+    }
+  },
+  {
+    "name": "pause",
+    "direction": "client",
+    "valid": true,
+    "message": {
+      "type": "pause",
+      "baseVersion": 3,
+      "position": 12.5
+    }
+  },
+  {
+    "name": "seek",
+    "direction": "client",
+    "valid": true,
+    "message": {
+      "type": "seek",
+      "baseVersion": 3,
+      "position": 3600.25
+    }
+  },
+  {
+    "name": "play negative position",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "play",
+      "baseVersion": 3,
+      "position": -1
+    }
+  },
+  {
+    "name": "play position as string",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "play",
+      "baseVersion": 3,
+      "position": "12.5"
+    }
+  },
+  {
+    "name": "play null position",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "play",
+      "baseVersion": 3,
+      "position": null
+    }
+  },
+  {
+    "name": "seek missing position",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "seek",
+      "baseVersion": 3
+    }
+  },
+  {
+    "name": "pause missing baseVersion",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "pause",
+      "position": 12.5
+    }
+  },
+  {
+    "name": "pause negative baseVersion",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "pause",
+      "baseVersion": -1,
+      "position": 12.5
+    }
+  },
+  {
+    "name": "seek fractional baseVersion",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "seek",
+      "baseVersion": 2.5,
+      "position": 12.5
+    }
+  },
+  {
+    "name": "ping",
+    "direction": "client",
+    "valid": true,
+    "message": {
+      "type": "ping",
+      "clientTime": 123456.789
+    }
+  },
+  {
+    "name": "ping missing clientTime",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "ping"
+    }
+  },
+  {
+    "name": "unknown client type",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "setRate",
+      "rate": 2
+    }
+  },
+  {
+    "name": "missing type",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "position": 1
+    }
+  },
+  {
+    "name": "non-object message",
+    "direction": "client",
+    "valid": false,
+    "message": [1, 2]
+  },
+  {
+    "name": "server message sent by client",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "welcome",
+      "clientId": "client-a1",
+      "roomId": "movie-night",
+      "serverTime": 1760300000123,
+      "state": {
+        "mediaUrl": "https://www.youtube.com/watch?v=abc",
+        "playing": true,
+        "position": 12.5,
+        "updatedAt": 1760300000000,
+        "rate": 1,
+        "version": 3
+      },
+      "members": [
+        {
+          "clientId": "client-a1",
+          "name": "Ryan"
+        }
+      ]
+    }
+  },
+  {
+    "name": "welcome",
+    "direction": "server",
+    "valid": true,
+    "message": {
+      "type": "welcome",
+      "clientId": "client-a1",
+      "roomId": "movie-night",
+      "serverTime": 1760300000123,
+      "state": {
+        "mediaUrl": "https://www.youtube.com/watch?v=abc",
+        "playing": true,
+        "position": 12.5,
+        "updatedAt": 1760300000000,
+        "rate": 1,
+        "version": 3
+      },
+      "members": [
+        {
+          "clientId": "client-a1",
+          "name": "Ryan"
+        }
+      ]
+    }
+  },
+  {
+    "name": "welcome paused with no media and no members",
+    "direction": "server",
+    "valid": true,
+    "message": {
+      "type": "welcome",
+      "clientId": "client-a1",
+      "roomId": "movie-night",
+      "serverTime": 1760300000123,
+      "state": {
+        "mediaUrl": "",
+        "playing": false,
+        "position": 12.5,
+        "updatedAt": 1760300000000,
+        "rate": 1,
+        "version": 3
+      },
+      "members": []
+    }
+  },
+  {
+    "name": "welcome missing state",
+    "direction": "server",
+    "valid": false,
+    "message": {
+      "type": "welcome",
+      "clientId": "client-a1",
+      "roomId": "movie-night",
+      "serverTime": 1760300000123,
+      "members": [
+        {
+          "clientId": "client-a1",
+          "name": "Ryan"
+        }
+      ]
+    }
+  },
+  {
+    "name": "welcome state missing updatedAt",
+    "direction": "server",
+    "valid": false,
+    "message": {
+      "type": "welcome",
+      "clientId": "client-a1",
+      "roomId": "movie-night",
+      "serverTime": 1760300000123,
+      "state": {
+        "mediaUrl": "https://www.youtube.com/watch?v=abc",
+        "playing": true,
+        "position": 12.5,
+        "rate": 1,
+        "version": 3
+      },
+      "members": [
+        {
+          "clientId": "client-a1",
+          "name": "Ryan"
+        }
+      ]
+    }
+  },
+  {
+    "name": "welcome state missing mediaUrl",
+    "direction": "server",
+    "valid": false,
+    "message": {
+      "type": "welcome",
+      "clientId": "client-a1",
+      "roomId": "movie-night",
+      "serverTime": 1760300000123,
+      "state": {
+        "playing": true,
+        "position": 12.5,
+        "updatedAt": 1760300000000,
+        "rate": 1,
+        "version": 3
+      },
+      "members": [
+        {
+          "clientId": "client-a1",
+          "name": "Ryan"
+        }
+      ]
+    }
+  },
+  {
+    "name": "welcome state rate too high",
+    "direction": "server",
+    "valid": false,
+    "message": {
+      "type": "welcome",
+      "clientId": "client-a1",
+      "roomId": "movie-night",
+      "serverTime": 1760300000123,
+      "state": {
+        "mediaUrl": "https://www.youtube.com/watch?v=abc",
+        "playing": true,
+        "position": 12.5,
+        "updatedAt": 1760300000000,
+        "rate": 8,
+        "version": 3
+      },
+      "members": [
+        {
+          "clientId": "client-a1",
+          "name": "Ryan"
+        }
+      ]
+    }
+  },
+  {
+    "name": "welcome state rate too low",
+    "direction": "server",
+    "valid": false,
+    "message": {
+      "type": "welcome",
+      "clientId": "client-a1",
+      "roomId": "movie-night",
+      "serverTime": 1760300000123,
+      "state": {
+        "mediaUrl": "https://www.youtube.com/watch?v=abc",
+        "playing": true,
+        "position": 12.5,
+        "updatedAt": 1760300000000,
+        "rate": 0.1,
+        "version": 3
+      },
+      "members": [
+        {
+          "clientId": "client-a1",
+          "name": "Ryan"
+        }
+      ]
+    }
+  },
+  {
+    "name": "welcome state playing not boolean",
+    "direction": "server",
+    "valid": false,
+    "message": {
+      "type": "welcome",
+      "clientId": "client-a1",
+      "roomId": "movie-night",
+      "serverTime": 1760300000123,
+      "state": {
+        "mediaUrl": "https://www.youtube.com/watch?v=abc",
+        "playing": "yes",
+        "position": 12.5,
+        "updatedAt": 1760300000000,
+        "rate": 1,
+        "version": 3
+      },
+      "members": [
+        {
+          "clientId": "client-a1",
+          "name": "Ryan"
+        }
+      ]
+    }
+  },
+  {
+    "name": "welcome bad member",
+    "direction": "server",
+    "valid": false,
+    "message": {
+      "type": "welcome",
+      "clientId": "client-a1",
+      "roomId": "movie-night",
+      "serverTime": 1760300000123,
+      "state": {
+        "mediaUrl": "https://www.youtube.com/watch?v=abc",
+        "playing": true,
+        "position": 12.5,
+        "updatedAt": 1760300000000,
+        "rate": 1,
+        "version": 3
+      },
+      "members": [
+        {
+          "clientId": "client-a1"
+        }
+      ]
+    }
+  },
+  {
+    "name": "welcome members not array",
+    "direction": "server",
+    "valid": false,
+    "message": {
+      "type": "welcome",
+      "clientId": "client-a1",
+      "roomId": "movie-night",
+      "serverTime": 1760300000123,
+      "state": {
+        "mediaUrl": "https://www.youtube.com/watch?v=abc",
+        "playing": true,
+        "position": 12.5,
+        "updatedAt": 1760300000000,
+        "rate": 1,
+        "version": 3
+      },
+      "members": {}
+    }
+  },
+  {
+    "name": "state",
+    "direction": "server",
+    "valid": true,
+    "message": {
+      "type": "state",
+      "state": {
+        "mediaUrl": "https://www.youtube.com/watch?v=abc",
+        "playing": true,
+        "position": 12.5,
+        "updatedAt": 1760300000000,
+        "rate": 1,
+        "version": 3
+      },
+      "cause": {
+        "action": "seek",
+        "by": "client-a1"
+      }
+    }
+  },
+  {
+    "name": "state bad cause action",
+    "direction": "server",
+    "valid": false,
+    "message": {
+      "type": "state",
+      "state": {
+        "mediaUrl": "https://www.youtube.com/watch?v=abc",
+        "playing": true,
+        "position": 12.5,
+        "updatedAt": 1760300000000,
+        "rate": 1,
+        "version": 3
+      },
+      "cause": {
+        "action": "rewind",
+        "by": "client-a1"
+      }
+    }
+  },
+  {
+    "name": "state missing cause",
+    "direction": "server",
+    "valid": false,
+    "message": {
+      "type": "state",
+      "state": {
+        "mediaUrl": "https://www.youtube.com/watch?v=abc",
+        "playing": true,
+        "position": 12.5,
+        "updatedAt": 1760300000000,
+        "rate": 1,
+        "version": 3
+      }
+    }
+  },
+  {
+    "name": "state negative version",
+    "direction": "server",
+    "valid": false,
+    "message": {
+      "type": "state",
+      "state": {
+        "mediaUrl": "https://www.youtube.com/watch?v=abc",
+        "playing": true,
+        "position": 12.5,
+        "updatedAt": 1760300000000,
+        "rate": 1,
+        "version": -1
+      },
+      "cause": {
+        "action": "seek",
+        "by": "client-a1"
+      }
+    }
+  },
+  {
+    "name": "presence",
+    "direction": "server",
+    "valid": true,
+    "message": {
+      "type": "presence",
+      "members": [
+        {
+          "clientId": "client-a1",
+          "name": "Ryan"
+        },
+        {
+          "clientId": "client-b2",
+          "name": "Alex"
+        }
+      ]
+    }
+  },
+  {
+    "name": "pong",
+    "direction": "server",
+    "valid": true,
+    "message": {
+      "type": "pong",
+      "clientTime": 123456.789,
+      "serverTime": 1760300000123
+    }
+  },
+  {
+    "name": "pong fractional serverTime",
+    "direction": "server",
+    "valid": false,
+    "message": {
+      "type": "pong",
+      "clientTime": 1,
+      "serverTime": 1.5
+    }
+  },
+  {
+    "name": "error",
+    "direction": "server",
+    "valid": true,
+    "message": {
+      "type": "error",
+      "code": "room_full",
+      "message": "Room is full (8 people)"
+    }
+  },
+  {
+    "name": "error unknown code",
+    "direction": "server",
+    "valid": false,
+    "message": {
+      "type": "error",
+      "code": "oops",
+      "message": "x"
+    }
+  },
+  {
+    "name": "client message sent by server",
+    "direction": "server",
+    "valid": false,
+    "message": {
+      "type": "play",
+      "baseVersion": 3,
+      "position": 12.5
+    }
+  }
+]
