@@ -41,11 +41,7 @@ func TestWebSocket(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ts.URL, "http")+"/ws", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = conn.CloseNow() }()
+	conn := dial(ctx, t, ts)
 
 	tests := []struct {
 		name  string
@@ -70,12 +66,9 @@ func TestWebSocket(t *testing.T) {
 			},
 		},
 		{
-			"rejoin keeps the client ID",
-			`{"type":"join","protocolVersion":1,"roomId":"room-abc","name":"Ryan","clientId":"client-a1"}`,
-			func(m protocol.ServerMessage) bool {
-				w, ok := m.(protocol.Welcome)
-				return ok && w.ClientID == "client-a1"
-			},
+			"a second join on the same connection is refused",
+			`{"type":"join","protocolVersion":1,"roomId":"room-xyz","name":"Ryan"}`,
+			isError(protocol.ErrBadMessage),
 		},
 		{
 			"join with another protocol version is refused",
@@ -98,9 +91,13 @@ func TestWebSocket(t *testing.T) {
 			isError(protocol.ErrBadMessage),
 		},
 		{
-			"play is not handled yet",
+			"play after joining is applied and echoed back",
 			`{"type":"play","baseVersion":0,"position":1}`,
-			isError(protocol.ErrBadMessage),
+			func(m protocol.ServerMessage) bool {
+				u, ok := m.(protocol.StateUpdate)
+				return ok && u.Cause.Action == protocol.TypePlay && u.State.Playing &&
+					u.State.Position == 1 && u.State.UpdatedAt == 5000 && u.State.Version == 1
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -127,5 +124,97 @@ func isError(code string) func(protocol.ServerMessage) bool {
 	return func(m protocol.ServerMessage) bool {
 		e, ok := m.(protocol.Error)
 		return ok && e.Code == code
+	}
+}
+
+func dial(ctx context.Context, t *testing.T, ts *httptest.Server) *websocket.Conn {
+	t.Helper()
+	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ts.URL, "http")+"/ws", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.CloseNow() })
+	return conn
+}
+
+func send(ctx context.Context, t *testing.T, conn *websocket.Conn, msg string) {
+	t.Helper()
+	if err := conn.Write(ctx, websocket.MessageText, []byte(msg)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func recv(ctx context.Context, t *testing.T, conn *websocket.Conn) protocol.ServerMessage {
+	t.Helper()
+	_, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := protocol.DecodeServerMessage(data)
+	if err != nil {
+		t.Fatalf("server sent an invalid message %s: %v", data, err)
+	}
+	return m
+}
+
+func TestIntentBeforeJoin(t *testing.T) {
+	ts := newTestServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn := dial(ctx, t, ts)
+
+	send(ctx, t, conn, `{"type":"pause","baseVersion":0,"position":1}`)
+	if m := recv(ctx, t, conn); !isError(protocol.ErrNotJoined)(m) {
+		t.Fatalf("got %+v, want not_joined", m)
+	}
+}
+
+// TestTwoClients is the two-tab demo at the protocol level: what one member
+// does, the other sees.
+func TestTwoClients(t *testing.T) {
+	ts := newTestServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	alice, bob := dial(ctx, t, ts), dial(ctx, t, ts)
+
+	send(ctx, t, alice, `{"type":"join","protocolVersion":1,"roomId":"movie-night","name":"Alice","clientId":"alice-1"}`)
+	if w, ok := recv(ctx, t, alice).(protocol.Welcome); !ok || w.ClientID != "alice-1" || len(w.Members) != 1 {
+		t.Fatalf("alice: got %+v, want a welcome listing only her", w)
+	}
+
+	send(ctx, t, bob, `{"type":"join","protocolVersion":1,"roomId":"movie-night","name":"Bob","clientId":"bob-1"}`)
+	w, ok := recv(ctx, t, bob).(protocol.Welcome)
+	if !ok || len(w.Members) != 2 || w.Members[0].Name != "Alice" || w.Members[1].Name != "Bob" {
+		t.Fatalf("bob: got %+v, want a welcome listing Alice then Bob", w)
+	}
+	if p, ok := recv(ctx, t, alice).(protocol.Presence); !ok || len(p.Members) != 2 {
+		t.Fatalf("alice: got %+v, want presence with two members", p)
+	}
+
+	// Each step waits for both members to see it, so arrival order is fixed.
+	for _, step := range []struct {
+		from   *websocket.Conn
+		msg    string
+		action string
+		by     string
+		pos    float64
+	}{
+		{bob, `{"type":"play","baseVersion":0,"position":30}`, "play", "bob-1", 30},
+		{alice, `{"type":"pause","baseVersion":1,"position":31.5}`, "pause", "alice-1", 31.5},
+		{alice, `{"type":"seek","baseVersion":2,"position":5}`, "seek", "alice-1", 5},
+	} {
+		send(ctx, t, step.from, step.msg)
+		for name, conn := range map[string]*websocket.Conn{"alice": alice, "bob": bob} {
+			u, ok := recv(ctx, t, conn).(protocol.StateUpdate)
+			if !ok || u.Cause.Action != step.action || u.Cause.By != step.by || u.State.Position != step.pos {
+				t.Fatalf("%s: got %+v, want %s by %s at %v", name, u, step.action, step.by, step.pos)
+			}
+		}
+	}
+
+	_ = bob.Close(websocket.StatusNormalClosure, "")
+	p, ok := recv(ctx, t, alice).(protocol.Presence)
+	if !ok || len(p.Members) != 1 || p.Members[0].ClientID != "alice-1" {
+		t.Fatalf("alice: got %+v, want presence with only her after bob left", p)
 	}
 }

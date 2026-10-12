@@ -2,8 +2,10 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -14,6 +16,14 @@ import (
 
 	"github.com/ryanjguo/insync/server/internal/protocol"
 	"github.com/ryanjguo/insync/server/internal/room"
+)
+
+const (
+	// sendBuffer is how many messages can queue for one client before it is
+	// treated as too slow and disconnected.
+	sendBuffer = 64
+	// writeTimeout bounds a single WebSocket write.
+	writeTimeout = 10 * time.Second
 )
 
 // Server serves the health check, the WebSocket endpoint and, optionally, a
@@ -42,6 +52,28 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
+// client is one WebSocket connection. It is the room.Peer for its member.
+type client struct {
+	out    chan protocol.ServerMessage
+	cancel context.CancelFunc
+
+	// Set by join; only the read loop touches these.
+	room *room.Room
+	id   string
+}
+
+// Send queues a room event for the client. It never blocks: a client that
+// falls sendBuffer messages behind is disconnected.
+func (c *client) Send(e room.Event) { c.send(toMessage(e)) }
+
+func (c *client) send(m protocol.ServerMessage) {
+	select {
+	case c.out <- m:
+	default:
+		c.cancel()
+	}
+}
+
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	// Extensions connect from chrome-extension:// and arbitrary page origins.
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
@@ -51,54 +83,119 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = conn.CloseNow() }()
 
-	ctx := r.Context()
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	c := &client{out: make(chan protocol.ServerMessage, sendBuffer), cancel: cancel}
+	go writeLoop(ctx, conn, c)
+	defer func() {
+		if c.room != nil {
+			c.room.Leave(c.id, c)
+		}
+	}()
+
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
-			return // client went away
+			return // client went away, or was too slow and got cancelled
 		}
-		var reply protocol.ServerMessage
-		if msg, err := protocol.DecodeClientMessage(data); err != nil {
-			reply = protocol.Error{Code: protocol.ErrBadMessage, Message: err.Error()}
-		} else {
-			reply = s.handleMessage(msg)
+		msg, err := protocol.DecodeClientMessage(data)
+		if err != nil {
+			c.send(protocol.Error{Code: protocol.ErrBadMessage, Message: err.Error()})
+			continue
 		}
-		if err := wsjson.Write(ctx, conn, reply); err != nil {
+		s.handleMessage(c, msg)
+	}
+}
+
+// writeLoop is the only goroutine that writes to conn, so replies and room
+// broadcasts go out in the order they were queued.
+func writeLoop(ctx context.Context, conn *websocket.Conn, c *client) {
+	defer c.cancel()
+	for {
+		select {
+		case <-ctx.Done():
 			return
+		case m := <-c.out:
+			wctx, done := context.WithTimeout(ctx, writeTimeout)
+			err := wsjson.Write(wctx, conn, m)
+			done()
+			if err != nil {
+				return
+			}
 		}
 	}
 }
 
-func (s *Server) handleMessage(msg protocol.ClientMessage) protocol.ServerMessage {
+func (s *Server) handleMessage(c *client, msg protocol.ClientMessage) {
+	nowMs := s.now().UnixMilli()
 	switch m := msg.(type) {
 	case protocol.Ping:
-		return protocol.Pong{ClientTime: m.ClientTime, ServerTime: s.now().UnixMilli()}
+		c.send(protocol.Pong{ClientTime: m.ClientTime, ServerTime: nowMs})
 	case protocol.Join:
-		if m.ProtocolVersion != protocol.ProtocolVersion {
-			return protocol.Error{
-				Code:    protocol.ErrUnsupportedVersion,
-				Message: fmt.Sprintf("server speaks protocol version %d", protocol.ProtocolVersion),
-			}
+		s.join(c, m, nowMs)
+	case protocol.Intent:
+		if c.room == nil {
+			c.send(protocol.Error{Code: protocol.ErrNotJoined, Message: "join a room first"})
+			return
 		}
-		clientID := m.ClientID
-		if clientID == "" {
-			clientID = newClientID()
-		}
-		// Rooms don't track members yet, so the joiner is the only one listed.
-		return protocol.Welcome{
-			ClientID:   clientID,
-			RoomID:     m.RoomID,
-			ServerTime: s.now().UnixMilli(),
-			State:      s.rooms.GetOrCreate(m.RoomID).Snapshot(),
-			Members:    []protocol.Member{{ClientID: clientID, Name: m.Name}},
-		}
-	default:
-		// play, pause and seek are valid but the room doesn't apply them yet.
-		return protocol.Error{
-			Code:    protocol.ErrBadMessage,
-			Message: fmt.Sprintf("%s is not supported by this server yet", msg.ClientType()),
-		}
+		c.room.Apply(room.Action(m.Action), m.Position, c.id, nowMs)
 	}
+}
+
+func (s *Server) join(c *client, m protocol.Join, nowMs int64) {
+	if m.ProtocolVersion != protocol.ProtocolVersion {
+		c.send(protocol.Error{
+			Code:    protocol.ErrUnsupportedVersion,
+			Message: fmt.Sprintf("server speaks protocol version %d", protocol.ProtocolVersion),
+		})
+		return
+	}
+	if c.room != nil {
+		c.send(protocol.Error{Code: protocol.ErrBadMessage, Message: "already joined; open a new connection to switch rooms"})
+		return
+	}
+	id := m.ClientID
+	if id == "" {
+		id = newClientID()
+	}
+	rm := s.rooms.GetOrCreate(m.RoomID)
+	if err := rm.Join(id, m.Name, c, nowMs); err != nil {
+		code := protocol.ErrBadMessage
+		if errors.Is(err, room.ErrFull) {
+			code = protocol.ErrRoomFull
+		}
+		c.send(protocol.Error{Code: code, Message: err.Error()})
+		return
+	}
+	c.room, c.id = rm, id
+}
+
+// toMessage turns a room event into the message sent on the wire.
+func toMessage(e room.Event) protocol.ServerMessage {
+	switch e := e.(type) {
+	case room.Joined:
+		return protocol.Welcome{
+			ClientID:   e.ClientID,
+			RoomID:     e.RoomID,
+			ServerTime: e.ServerTime,
+			State:      e.State,
+			Members:    toMembers(e.Members),
+		}
+	case room.StateChanged:
+		return protocol.StateUpdate{State: e.State, Cause: protocol.Cause{Action: string(e.Action), By: e.By}}
+	case room.MembersChanged:
+		return protocol.Presence{Members: toMembers(e.Members)}
+	default:
+		panic(fmt.Sprintf("unknown room event %T", e))
+	}
+}
+
+func toMembers(ms []room.Member) []protocol.Member {
+	out := make([]protocol.Member, len(ms))
+	for i, m := range ms {
+		out[i] = protocol.Member{ClientID: m.ClientID, Name: m.Name}
+	}
+	return out
 }
 
 func newClientID() string {
