@@ -26,6 +26,8 @@ interface Tab {
   adShowing: boolean;
   /** Takes the tab to the room's video, and the room to the tab's. */
   follower: MediaFollower;
+  /** Chat lines from others since the popup was last open. */
+  unread: number;
   /** The last update sent to the tab's frames. */
   sent: RoomUpdate | null;
   pinger?: ReturnType<typeof setInterval>;
@@ -42,6 +44,7 @@ function tab(id: number): Tab {
       buffering: new Set(),
       playBlocked: false,
       adShowing: false,
+      unread: 0,
       sent: null,
       follower: new MediaFollower({
         navigate: (url) => {
@@ -95,6 +98,15 @@ function reportBuffering(t: Tab): void {
   t.session?.setBuffering(t.buffering.size > 0);
 }
 
+/** Show the tab's unread chat count on the extension's icon. */
+function setUnread(tabId: number, t: Tab, unread: number): void {
+  if (t.unread === unread) return;
+  t.unread = unread;
+  chrome.action
+    .setBadgeText({ tabId, text: unread > 0 ? String(unread) : "" })
+    .catch(() => {});
+}
+
 function leave(t: Tab): void {
   clearInterval(t.pinger);
   t.session?.close();
@@ -115,6 +127,10 @@ function join(
     roomId: req.roomId,
     name: req.name,
     createSocket: (url) => new WebSocket(url),
+    onChat: (line, history) => {
+      if (!history && line.from !== session.snapshot.clientId)
+        setUnread(tabId, t, t.unread + 1);
+    },
     onChange: (snap) => {
       t.follower.setRoom(
         inRoom(snap) ? (snap.state?.mediaUrl ?? null) : null,
@@ -133,6 +149,8 @@ function join(
 
 function status(tabId: number): TabStatus {
   const t = tabs.get(tabId);
+  // The popup asks while it's open, so the chat has been seen.
+  if (t) setUnread(tabId, t, 0);
   return {
     session: t?.session?.snapshot ?? null,
     hasVideo: (t?.ports.size ?? 0) > 0,
@@ -184,6 +202,7 @@ chrome.runtime.onMessage.addListener(
     }
     if (req.kind === "join") join(req.tabId, req);
     else if (req.kind === "leave") leave(tab(req.tabId));
+    else if (req.kind === "chat") tab(req.tabId).session?.sendChat(req.text);
     reply(status(req.tabId));
   },
 );

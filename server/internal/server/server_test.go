@@ -168,6 +168,7 @@ func TestIntentBeforeJoin(t *testing.T) {
 		`{"type":"pause","baseVersion":0,"position":1}`,
 		`{"type":"media","baseVersion":0,"mediaUrl":"https://x.test/v"}`,
 		`{"type":"buffering","buffering":true}`,
+		`{"type":"chat","text":"hi"}`,
 	} {
 		send(ctx, t, conn, msg)
 		if m := recv(ctx, t, conn); !isError(protocol.ErrNotJoined)(m) {
@@ -296,5 +297,30 @@ func TestBufferingPausesTheRoom(t *testing.T) {
 				t.Fatalf("%s: got %+v, want playing=%t because of bob's buffering", name, u, step.playing)
 			}
 		}
+	}
+}
+
+// TestChat: a message reaches everyone in the room, and someone joining later
+// gets the recent ones.
+func TestChat(t *testing.T) {
+	ts := newTestServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	alice, bob := dial(ctx, t, ts), dial(ctx, t, ts)
+	send(ctx, t, alice, `{"type":"join","protocolVersion":1,"roomId":"movie-night","name":"Alice","clientId":"alice-1"}`)
+	recv(ctx, t, alice)
+
+	send(ctx, t, alice, `{"type":"chat","text":" starting soon "}`)
+	want := protocol.ChatLine{From: "alice-1", Name: "Alice", Text: "starting soon", SentAt: 5000}
+	if got := recv(ctx, t, alice); got != want {
+		t.Fatalf("alice: got %+v, want her own message back", got)
+	}
+
+	send(ctx, t, bob, `{"type":"join","protocolVersion":1,"roomId":"movie-night","name":"Bob","clientId":"bob-1"}`)
+	if _, ok := recv(ctx, t, bob).(protocol.Welcome); !ok {
+		t.Fatal("bob: want a welcome first")
+	}
+	if got := recv(ctx, t, bob); got != want {
+		t.Fatalf("bob: got %+v, want the earlier message", got)
 	}
 }

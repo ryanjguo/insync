@@ -150,6 +150,68 @@ describe("RoomSession", () => {
     ]);
   });
 
+  describe("chat", () => {
+    let heard: [string, boolean][];
+    beforeEach(() => {
+      heard = [];
+      session = new RoomSession({
+        url: "ws://localhost:8080/ws",
+        roomId: "movie-night",
+        name: "Ryan",
+        createSocket: () => socket,
+        now: () => now,
+        onChange: () => {},
+        onChat: (line, history) => heard.push([line.text, history]),
+      });
+    });
+    const line = (text: string, sentAt: number) =>
+      socket.receive({
+        type: "chat",
+        from: "client-2",
+        name: "Alex",
+        text,
+        sentAt,
+      });
+
+    it("sends chat only once joined", () => {
+      expect(session.sendChat("too early")).toBe(false);
+      welcome(5_000);
+      expect(session.sendChat("hi")).toBe(true);
+      expect(socket.sent).toEqual([{ type: "chat", text: "hi" }]);
+    });
+
+    it("keeps recent chat and tells replayed history from new lines", () => {
+      welcome(5_000);
+      line("from before", 4_000);
+      line("just now", 6_000);
+      expect(session.snapshot.chat.map((l) => l.text)).toEqual([
+        "from before",
+        "just now",
+      ]);
+      expect(heard).toEqual([
+        ["from before", true],
+        ["just now", false],
+      ]);
+    });
+
+    it("starts the log over on rejoining, since the server replays it", () => {
+      welcome(5_000);
+      line("hello", 6_000);
+      welcome(7_000);
+      expect(session.snapshot.chat).toEqual([]);
+      line("hello", 6_000);
+      expect(session.snapshot.chat).toHaveLength(1);
+      expect(heard.at(-1)).toEqual(["hello", true]);
+    });
+
+    it("keeps at most 50 lines", () => {
+      welcome(5_000);
+      for (let i = 0; i < 60; i++) line(`line ${i}`, 6_000 + i);
+      expect(session.snapshot.chat).toHaveLength(50);
+      expect(session.snapshot.chat[0]!.text).toBe("line 10");
+    });
+  });
+
   it("only sends intents once joined", () => {
     session.sendIntent({ type: "play", baseVersion: 0, position: 1 });
     welcome();

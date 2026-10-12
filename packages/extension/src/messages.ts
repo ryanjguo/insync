@@ -51,6 +51,7 @@ export type PopupRequest =
       serverUrl: string;
     }
   | { kind: "leave"; tabId: number }
+  | { kind: "chat"; tabId: number; text: string }
   | { kind: "status"; tabId: number };
 
 export interface TabStatus {

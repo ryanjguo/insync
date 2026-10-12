@@ -363,3 +363,45 @@ func TestRejoinKeepsBuffering(t *testing.T) {
 		t.Fatalf("got %+v, want playing once bob is ready", sc)
 	}
 }
+
+func TestChat(t *testing.T) {
+	r := New("room")
+	alice, bob := &recorder{}, &recorder{}
+	_ = r.Join("alice", "Alice", alice, 0)
+	_ = r.Join("bob", "Bob", bob, 0)
+
+	r.Chat("alice", "hi", 1000)
+	want := ChatLine{From: "alice", Name: "Alice", Text: "hi", SentAt: 1000}
+	for name, p := range map[string]*recorder{"alice": alice, "bob": bob} {
+		if p.last() != want {
+			t.Fatalf("%s got %+v, want %+v", name, p.last(), want)
+		}
+	}
+
+	r.Chat("nobody", "hi", 1000) // not a member
+	if alice.last() != want {
+		t.Fatal("a non-member's message was sent")
+	}
+}
+
+func TestChatHistory(t *testing.T) {
+	r := New("room")
+	_ = r.Join("alice", "Alice", &recorder{}, 0)
+	for i := range ChatHistory + 5 {
+		r.Chat("alice", "line", int64(i))
+	}
+	late := &recorder{}
+	_ = r.Join("late", "Late", late, 0)
+	var lines []ChatLine
+	for _, e := range late.events {
+		if line, ok := e.(ChatLine); ok {
+			lines = append(lines, line)
+		}
+	}
+	if _, ok := late.events[0].(Joined); !ok {
+		t.Fatalf("first event %+v, want Joined", late.events[0])
+	}
+	if len(lines) != ChatHistory || lines[0].SentAt != 5 || lines[len(lines)-1].SentAt != ChatHistory+4 {
+		t.Fatalf("got %d lines from %d to %d, want the last %d", len(lines), lines[0].SentAt, lines[len(lines)-1].SentAt, ChatHistory)
+	}
+}

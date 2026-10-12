@@ -38,6 +38,29 @@
       label.check input {
         width: auto;
       }
+      #chat-log {
+        height: 160px;
+        overflow-y: auto;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        padding: 4px 6px;
+        overflow-wrap: anywhere;
+      }
+      #chat-log:empty::before {
+        content: "No messages yet.";
+        color: #888;
+      }
+      #chat-log p {
+        margin: 2px 0;
+      }
+      #chat-form {
+        display: flex;
+        gap: 6px;
+        margin-top: 6px;
+      }
+      #chat-form button {
+        margin-top: 0;
+      }
       #error {
         color: #b00020;
       }
@@ -66,6 +89,16 @@
       <p id="members"></p>
       <p id="waiting"></p>
       <p id="video-note"></p>
+      <div id="chat-log" aria-live="polite"></div>
+      <form id="chat-form">
+        <input
+          id="chat-input"
+          maxlength="500"
+          placeholder="Say something"
+          autocomplete="off"
+        />
+        <button type="submit">Send</button>
+      </form>
       <button id="leave" type="button">Leave</button>
     </div>
 

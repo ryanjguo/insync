@@ -158,6 +158,12 @@ func (s *Server) handleMessage(c *client, msg protocol.ClientMessage) {
 			return
 		}
 		c.room.SetBuffering(c.id, m.Buffering, nowMs)
+	case protocol.Chat:
+		if c.room == nil {
+			c.send(protocol.Error{Code: protocol.ErrNotJoined, Message: "join a room first"})
+			return
+		}
+		c.room.Chat(c.id, m.Text, nowMs)
 	}
 }
 
@@ -204,6 +210,8 @@ func toMessage(e room.Event) protocol.ServerMessage {
 		return protocol.StateUpdate{State: e.State, Cause: protocol.Cause{Action: string(e.Action), By: e.By}}
 	case room.MembersChanged:
 		return protocol.Presence{Members: toMembers(e.Members)}
+	case room.ChatLine:
+		return protocol.ChatLine{From: e.From, Name: e.Name, Text: e.Text, SentAt: e.SentAt}
 	default:
 		panic(fmt.Sprintf("unknown room event %T", e))
 	}

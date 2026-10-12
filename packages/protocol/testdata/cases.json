@@ -332,6 +332,41 @@
     }
   },
   {
+    "name": "chat",
+    "direction": "client",
+    "valid": true,
+    "message": {
+      "type": "chat",
+      "text": "brb, popcorn 🍿"
+    }
+  },
+  {
+    "name": "chat blank",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "chat",
+      "text": "   "
+    }
+  },
+  {
+    "name": "chat too long",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "chat",
+      "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    }
+  },
+  {
+    "name": "chat missing text",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "chat"
+    }
+  },
+  {
     "name": "unknown client type",
     "direction": "client",
     "valid": false,
@@ -798,6 +833,41 @@
       "type": "pong",
       "clientTime": 1,
       "serverTime": 1.5
+    }
+  },
+  {
+    "name": "chat line",
+    "direction": "server",
+    "valid": true,
+    "message": {
+      "type": "chat",
+      "from": "client-a1",
+      "name": "Ryan",
+      "text": "starting soon",
+      "sentAt": 1760300000123
+    }
+  },
+  {
+    "name": "chat line missing from",
+    "direction": "server",
+    "valid": false,
+    "message": {
+      "type": "chat",
+      "name": "Ryan",
+      "text": "hi",
+      "sentAt": 1760300000123
+    }
+  },
+  {
+    "name": "chat line fractional sentAt",
+    "direction": "server",
+    "valid": false,
+    "message": {
+      "type": "chat",
+      "from": "client-a1",
+      "name": "Ryan",
+      "text": "hi",
+      "sentAt": 1.5
     }
   },
   {

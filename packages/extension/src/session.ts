@@ -1,6 +1,7 @@
 import {
   PROTOCOL_VERSION,
   parseServerMessage,
+  type ChatLineMessage,
   type ClientMessage,
   type IntentMessage,
   type MediaMessage,
@@ -39,6 +40,8 @@ export interface SessionSnapshot {
   error: string | null;
   /** Counts welcomes. A new one means the room state starts afresh (the server may have restarted). */
   joins: number;
+  /** Recent chat, oldest first. */
+  chat: ChatLineMessage[];
 }
 
 export interface SessionOptions {
@@ -50,6 +53,11 @@ export interface SessionOptions {
   now?: () => number;
   /** Called after anything in the snapshot changes. */
   onChange: (s: SessionSnapshot) => void;
+  /**
+   * Called for each chat line. `history` is true for lines sent before this
+   * (re)join, which the server replays right after the welcome.
+   */
+  onChat?: (line: ChatLineMessage, history: boolean) => void;
   /** Timer for reconnect delays. Defaults to setTimeout. */
   setTimer?: (fn: () => void, ms: number) => unknown;
   /** Cancels a timer from setTimer. Defaults to clearTimeout. */
@@ -60,6 +68,8 @@ export interface SessionOptions {
 
 /** Clock samples taken right after joining, before settling into keepalive pings. */
 const INITIAL_PINGS = 5;
+/** How many chat lines to keep (the server replays up to 50 on joining). */
+const MAX_CHAT_LINES = 50;
 /** How many recent clock samples to keep. */
 const MAX_SAMPLES = 8;
 /** Reconnect delays: 1 s, doubling up to 10 s, each plus up to 30% at random. */
@@ -89,6 +99,8 @@ export class RoomSession {
   /** Failed reconnects in a row, for the backoff. */
   private attempts = 0;
   private retryTimer: unknown = null;
+  /** Server time of the last welcome: chat lines up to then are history. */
+  private joinedAt = 0;
   /** Local time the server was last heard from. */
   private lastHeard: number;
   private closed = false;
@@ -109,6 +121,7 @@ export class RoomSession {
       rttMs: null,
       error: null,
       joins: 0,
+      chat: [],
     };
     this.lastHeard = this.now();
     this.socket = this.connect();
@@ -195,6 +208,13 @@ export class RoomSession {
     else if (this.snap.status === "reconnecting") this.queued.media = msg;
   }
 
+  /** Send a chat message to the room. Returns false when not connected. */
+  sendChat(text: string): boolean {
+    if (this.snap.status !== "joined") return false;
+    this.send({ type: "chat", text });
+    return true;
+  }
+
   /** Tell the room whether this tab's video is stalled loading. */
   setBuffering(buffering: boolean): void {
     if (buffering === this.buffering) return;
@@ -251,6 +271,7 @@ export class RoomSession {
     switch (msg.type) {
       case "welcome":
         this.attempts = 0;
+        this.joinedAt = msg.serverTime;
         this.update({
           status: "joined",
           clientId: msg.clientId,
@@ -263,6 +284,8 @@ export class RoomSession {
               : msg.serverTime - this.now(),
           error: null,
           joins: this.snap.joins + 1,
+          // The server replays recent chat next.
+          chat: [],
         });
         break;
       case "state":
@@ -271,6 +294,10 @@ export class RoomSession {
         break;
       case "presence":
         this.update({ members: msg.members });
+        break;
+      case "chat":
+        this.update({ chat: [...this.snap.chat, msg].slice(-MAX_CHAT_LINES) });
+        this.opts.onChat?.(msg, msg.sentAt <= this.joinedAt);
         break;
       case "pong": {
         this.samples.push({

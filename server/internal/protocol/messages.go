@@ -21,6 +21,9 @@ const (
 // MaxMediaURL is the longest MediaURL a client may send.
 const MaxMediaURL = 2048
 
+// MaxChat is the longest chat message, in characters.
+const MaxChat = 500
+
 // Message types.
 const (
 	TypeJoin  = "join"
@@ -31,6 +34,8 @@ const (
 	TypePing  = "ping"
 	// TypeBuffering is also a StateUpdate cause: the room paused for, or resumed after, buffering.
 	TypeBuffering = "buffering"
+	// TypeChat is a chat message, sent by a client and relayed by the server.
+	TypeChat = "chat"
 
 	TypeWelcome  = "welcome"
 	TypeState    = "state"
@@ -104,6 +109,11 @@ type Buffering struct {
 	Buffering bool `json:"buffering"`
 }
 
+// Chat is a chat message from a client to its room.
+type Chat struct {
+	Text string `json:"text"`
+}
+
 // ClientType implements ClientMessage.
 func (Join) ClientType() string { return TypeJoin }
 
@@ -118,6 +128,9 @@ func (Ping) ClientType() string { return TypePing }
 
 // ClientType implements ClientMessage.
 func (Buffering) ClientType() string { return TypeBuffering }
+
+// ClientType implements ClientMessage.
+func (Chat) ClientType() string { return TypeChat }
 
 // Server -> client.
 
@@ -162,6 +175,17 @@ type Error struct {
 	Message string `json:"message"`
 }
 
+// ChatLine relays a member's chat message to the room.
+type ChatLine struct {
+	// From is the sender's client ID.
+	From string `json:"from"`
+	// Name is the sender's display name when they sent it.
+	Name string `json:"name"`
+	Text string `json:"text"`
+	// SentAt is server time in epoch ms when the server received it.
+	SentAt int64 `json:"sentAt"`
+}
+
 // ServerType implements ServerMessage.
 func (Welcome) ServerType() string { return TypeWelcome }
 
@@ -176,6 +200,9 @@ func (Pong) ServerType() string { return TypePong }
 
 // ServerType implements ServerMessage.
 func (Error) ServerType() string { return TypeError }
+
+// ServerType implements ServerMessage.
+func (ChatLine) ServerType() string { return TypeChat }
 
 // Each message marshals with its "type" field. Members marshal as [] rather than null.
 
@@ -224,6 +251,18 @@ func (m Ping) MarshalJSON() ([]byte, error) {
 func (m Buffering) MarshalJSON() ([]byte, error) {
 	type wire Buffering
 	return marshalTyped(TypeBuffering, wire(m))
+}
+
+// MarshalJSON adds the "type" field.
+func (m Chat) MarshalJSON() ([]byte, error) {
+	type wire Chat
+	return marshalTyped(TypeChat, wire(m))
+}
+
+// MarshalJSON adds the "type" field.
+func (m ChatLine) MarshalJSON() ([]byte, error) {
+	type wire ChatLine
+	return marshalTyped(TypeChat, wire(m))
 }
 
 // MarshalJSON adds the "type" field.
