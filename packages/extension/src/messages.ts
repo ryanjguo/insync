@@ -4,6 +4,9 @@
 import type { IntentMessage, RoomState } from "@wps/protocol";
 import type { SessionSnapshot } from "./session";
 
+/** chrome.storage.local key: whether pages show the debug overlay. */
+export const DEBUG_OVERLAY_KEY = "debugOverlay";
+
 /** Name of the port a content script opens once its frame has a video. */
 export const PLAYER_PORT = "player";
 
@@ -16,6 +19,8 @@ export interface RoomUpdate {
   /** Null when the tab is not in a room. */
   state: RoomState | null;
   offsetMs: number;
+  /** Round trip to the server in ms, for the debug overlay. Null until measured. */
+  rttMs: number | null;
   /** Bumped on every (re)join. The state may then be older than the last one: follow it anyway. */
   joins: number;
 }

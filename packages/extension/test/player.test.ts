@@ -388,4 +388,35 @@ describe("PlayerSync", () => {
       expect(media.playbackRate).toBe(1);
     });
   });
+
+  describe("stats", () => {
+    it("is idle outside a room", () => {
+      expect(sync.stats()).toEqual({
+        mode: "idle",
+        driftSec: null,
+        rate: 1,
+        nudged: false,
+        version: null,
+      });
+    });
+
+    it("reports drift from the room while following", () => {
+      sync.apply(
+        state({ playing: true, position: 10, updatedAt: now, version: 4 }),
+      );
+      now += 2_000; // the room is at 12 s
+      media.currentTime = 11.5;
+      expect(sync.stats()).toMatchObject({
+        mode: "following",
+        version: 4,
+      });
+      expect(sync.stats().driftSec).toBeCloseTo(-0.5);
+    });
+
+    it("reports no drift while new media settles", () => {
+      sync.apply(state({ position: 5 }));
+      media.load(100);
+      expect(sync.stats()).toMatchObject({ mode: "settling", driftSec: null });
+    });
+  });
 });

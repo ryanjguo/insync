@@ -50,6 +50,23 @@ export interface PlayerSyncOptions {
   now?: () => number;
 }
 
+/** What the video is doing relative to the room, for the debug overlay. */
+export interface SyncStats {
+  /**
+   * "idle": not in a room. "held": an ad is showing. "settling": new media
+   * just loaded. "following": tracking the room.
+   */
+  mode: "idle" | "held" | "settling" | "following";
+  /** Seconds ahead (positive) or behind (negative) of the room. Null unless following. */
+  driftSec: number | null;
+  /** The video's current playbackRate. */
+  rate: number;
+  /** Whether drift correction has nudged playbackRate away from the room's rate. */
+  nudged: boolean;
+  /** The room version being followed, or null. */
+  version: number | null;
+}
+
 /** Check drift at most this often while playing. Milliseconds. */
 const DRIFT_CHECK_MS = 500;
 /**
@@ -148,6 +165,28 @@ export class PlayerSync {
   /** The room state the video is following, or null when not in a room. */
   get room(): RoomState | null {
     return this.state;
+  }
+
+  /** A snapshot of how the video is tracking the room. */
+  stats(): SyncStats {
+    const state = this.state;
+    const mode = !state
+      ? "idle"
+      : this.held
+        ? "held"
+        : this.settling
+          ? "settling"
+          : "following";
+    return {
+      mode,
+      driftSec:
+        state && mode === "following"
+          ? this.media.currentTime - this.target(state)
+          : null,
+      rate: this.media.playbackRate,
+      nudged: this.nudged,
+      version: state?.version ?? null,
+    };
   }
 
   /** Follow a new room state (or stop following, with null). Older versions are ignored. */

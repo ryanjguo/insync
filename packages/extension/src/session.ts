@@ -33,6 +33,8 @@ export interface SessionSnapshot {
   members: Member[];
   /** Add to local time to get server time. */
   offsetMs: number;
+  /** Round trip to the server of the best recent ping, in ms. Null until a pong comes back. */
+  rttMs: number | null;
   /** The last error the server sent, if any. */
   error: string | null;
   /** Counts welcomes. A new one means the room state starts afresh (the server may have restarted). */
@@ -102,6 +104,7 @@ export class RoomSession {
       state: null,
       members: [],
       offsetMs: 0,
+      rttMs: null,
       error: null,
       joins: 0,
     };
@@ -263,7 +266,8 @@ export class RoomSession {
           t2: this.now(),
         });
         if (this.samples.length > MAX_SAMPLES) this.samples.shift();
-        this.update({ offsetMs: estimateOffset(this.samples).offsetMs });
+        const { offsetMs, rttMs } = estimateOffset(this.samples);
+        this.update({ offsetMs, rttMs });
         if (this.samples.length < INITIAL_PINGS) this.ping();
         break;
       }

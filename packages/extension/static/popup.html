@@ -30,6 +30,14 @@
         margin-top: 10px;
         padding: 4px 12px;
       }
+      label.check {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      label.check input {
+        width: auto;
+      }
       #error {
         color: #b00020;
       }
@@ -61,6 +69,10 @@
     </div>
 
     <p id="error"></p>
+    <label class="check"
+      ><input id="debug-overlay" type="checkbox" /> Show sync debug
+      overlay</label
+    >
     <script type="module" src="popup.js"></script>
   </body>
 </html>
