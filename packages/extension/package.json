@@ -1,0 +1,13 @@
+{
+  "name": "@wps/extension",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Chrome Manifest V3 extension that steers the page's <video> toward the room state.",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@wps/sync-core": "*"
+  }
+}
