@@ -57,26 +57,28 @@ sets it with `media`.
 
 ## Client → server
 
-| `type`  | Fields                                           | Meaning                                                               |
-| ------- | ------------------------------------------------ | --------------------------------------------------------------------- |
-| `join`  | `protocolVersion`, `roomId`, `name`, `clientId?` | Join (or create) a room. Send `clientId` to resume after a reconnect. |
-| `play`  | `baseVersion`, `position`                        | Start playing from `position`.                                        |
-| `pause` | `baseVersion`, `position`                        | Pause at `position`.                                                  |
-| `seek`  | `baseVersion`, `position`                        | Jump to `position`, keeping play/pause as is.                         |
-| `media` | `baseVersion`, `mediaUrl`                        | Switch the room to another video (see below).                         |
-| `ping`  | `clientTime`                                     | Clock sync probe; `clientTime` is the client's local time in ms.      |
+| `type`      | Fields                                           | Meaning                                                               |
+| ----------- | ------------------------------------------------ | --------------------------------------------------------------------- |
+| `join`      | `protocolVersion`, `roomId`, `name`, `clientId?` | Join (or create) a room. Send `clientId` to resume after a reconnect. |
+| `play`      | `baseVersion`, `position`                        | Start playing from `position`.                                        |
+| `pause`     | `baseVersion`, `position`                        | Pause at `position`.                                                  |
+| `seek`      | `baseVersion`, `position`                        | Jump to `position`, keeping play/pause as is.                         |
+| `media`     | `baseVersion`, `mediaUrl`                        | Switch the room to another video (see below).                         |
+| `ping`      | `clientTime`                                     | Clock sync probe; `clientTime` is the client's local time in ms.      |
+| `buffering` | `buffering`                                      | Whether this client's video is stalled loading (see below).           |
 
 ## Server → client
 
-| `type`     | Fields                                                 | Meaning                                                                                                                  |
-| ---------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| `welcome`  | `clientId`, `roomId`, `serverTime`, `state`, `members` | Reply to `join`: full snapshot for a new, late or reconnecting client.                                                   |
-| `state`    | `state`, `cause`                                       | Broadcast after every applied intent. `cause` is `{ "action": "play" \| "pause" \| "seek" \| "media", "by": clientId }`. |
-| `presence` | `members`                                              | The member list changed (someone joined or left).                                                                        |
-| `pong`     | `clientTime`, `serverTime`                             | Reply to `ping`: echoes `clientTime`; `serverTime` is server time when replying.                                         |
-| `error`    | `code`, `message`                                      | `code` is one of `bad_message`, `unsupported_version`, `room_full`, `not_joined`.                                        |
+| `type`     | Fields                                                 | Meaning                                                                                                                                 |
+| ---------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `welcome`  | `clientId`, `roomId`, `serverTime`, `state`, `members` | Reply to `join`: full snapshot for a new, late or reconnecting client.                                                                  |
+| `state`    | `state`, `cause`                                       | Broadcast after every applied intent. `cause` is `{ "action": "play" \| "pause" \| "seek" \| "media" \| "buffering", "by": clientId }`. |
+| `presence` | `members`                                              | The member list changed (someone joined, left, or started or stopped buffering).                                                        |
+| `pong`     | `clientTime`, `serverTime`                             | Reply to `ping`: echoes `clientTime`; `serverTime` is server time when replying.                                                        |
+| `error`    | `code`, `message`                                      | `code` is one of `bad_message`, `unsupported_version`, `room_full`, `not_joined`.                                                       |
 
-A member is `{ "clientId": "...", "name": "..." }`.
+A member is `{ "clientId": "...", "name": "...", "buffering": true }`;
+`buffering` is left out when false.
 
 ## Switching video
 
@@ -92,10 +94,25 @@ always has the same URL.
 - If it names the video the room already has, nothing changes and nothing is
   broadcast.
 
+## Buffering
+
+A client sends `buffering: true` when its video stalls for data while the room
+is playing, and `buffering: false` once it can play again. Each change is
+broadcast as a `presence` with that member's `buffering` flag.
+
+- If the room is playing when someone starts buffering, it pauses where it is
+  (a `state` with cause `buffering`, by them).
+- Once nobody in a room paused this way is buffering (they report ready, or
+  leave), it plays again from where it paused (cause `buffering`, by whoever
+  was last).
+- A `play` or `pause` from anyone overrides the wait: the room does what they
+  asked and doesn't resume on its own afterwards. This is the way out when
+  someone's video is stuck.
+- A member who reconnects keeps their buffering flag until they report again.
+
 ## Not in this draft
 
-Playback-rate changes, buffering (`waiting` / `playing` reports), chat, and
-host-only mode. They are planned as later message types.
+Playback-rate changes, chat, and host-only mode. They are planned as later message types.
 
 A connection joins one room; a second `join` on it is a `bad_message`. Sending
 `play`, `pause` or `seek` before joining is `not_joined`. A room holds up to 16

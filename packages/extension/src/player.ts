@@ -15,6 +15,8 @@ export interface Media {
   readonly seeking: boolean;
   /** Seconds; NaN until known, Infinity for live streams. */
   readonly duration: number;
+  /** HTMLMediaElement.readyState: 3 (HAVE_FUTURE_DATA) or more means it can play on. */
+  readonly readyState: number;
   play(): Promise<void>;
   pause(): void;
   addEventListener(type: string, listener: () => void): void;
@@ -40,6 +42,13 @@ export interface PlayerSyncOptions {
   isHeld?: () => boolean;
   /** Called when isHeld changes, as noticed on the video's events. */
   onHeldChange?: (held: boolean) => void;
+  /**
+   * Called when the video stalls loading while following the room (true),
+   * and when it can play again (false).
+   */
+  onBuffering?: (buffering: boolean) => void;
+  /** How long the video must stall before it counts as buffering. Milliseconds. */
+  stallMs?: number;
   /** After the video loads new media, how long to ignore its events before catching up. Milliseconds. */
   settleMs?: number;
   /** Timer for the settle delay. Defaults to setTimeout. */
@@ -84,6 +93,12 @@ const EVENTS: Record<string, IntentAction> = {
 /** Events that only matter for noticing a hold (ad) starting or ending. */
 const HOLD_EVENTS = ["timeupdate", "playing", "loadedmetadata"];
 
+/** HTMLMediaElement.HAVE_FUTURE_DATA: enough loaded to keep playing. */
+const HAVE_FUTURE_DATA = 3;
+
+/** Events that may mean a stalled video can play again. */
+const READY_EVENTS = ["canplay", "playing", "progress"];
+
 /** Never seek closer to the end than this, so a shorter video doesn't just end. Seconds. */
 const END_MARGIN_SEC = 1;
 
@@ -107,6 +122,10 @@ const END_MARGIN_SEC = 1;
  * where the room says it should be. Small drift is fixed by nudging
  * playbackRate a few percent, large drift by seeking (sync-core's `correct`).
  * Rate nudges are undone as soon as the video is back in line or stops.
+ *
+ * Buffering: when the video stalls for data for more than `stallMs` while
+ * following the room, `onBuffering(true)` lets the room pause for it;
+ * `onBuffering(false)` follows once it has enough loaded to play on.
  */
 export class PlayerSync {
   private state: RoomState | null = null;
@@ -125,6 +144,10 @@ export class PlayerSync {
   private nudged = false;
   private lastDriftCheck = -Infinity;
   private lastDriftSeek = -Infinity;
+  /** Whether onBuffering last reported a stall. */
+  private stalled = false;
+  /** Bumped on each stall and recovery, so a stale stall timer does nothing. */
+  private stalls = 0;
 
   constructor(
     private readonly media: Media,
@@ -145,6 +168,11 @@ export class PlayerSync {
       ]),
       ["timeupdate", () => this.correctDrift()],
       ["loadedmetadata", () => this.onLoad()],
+      ["waiting", () => this.onWaiting()],
+      ...READY_EVENTS.map((event): [string, () => void] => [
+        event,
+        () => this.checkReady(),
+      ]),
     ];
     for (const [event, fn] of this.listeners) media.addEventListener(event, fn);
   }
@@ -152,6 +180,7 @@ export class PlayerSync {
   /** Stop listening to the video. */
   dispose(): void {
     this.unnudge();
+    this.setStalled(false);
     this.disposed = true;
     for (const [event, fn] of this.listeners)
       this.media.removeEventListener(event, fn);
@@ -193,6 +222,7 @@ export class PlayerSync {
   apply(state: RoomState | null): void {
     if (state && this.state && state.version < this.state.version) return;
     this.state = state;
+    if (!state) this.setStalled(false);
     if (!state || !state.playing) this.unnudge();
     if (!state || state.version > 0) this.seeded = false;
     if (!state || this.held || this.settling) return;
@@ -282,7 +312,33 @@ export class PlayerSync {
     if (held === this.held) return;
     this.held = held;
     this.opts.onHeldChange?.(held);
+    if (held) this.setStalled(false);
     if (!held) this.onLoad();
+  }
+
+  /** The video ran out of data. If it stays stuck while following, report it. */
+  private onWaiting(): void {
+    if (!this.state?.playing || this.held || this.settling) return;
+    const stall = ++this.stalls;
+    const setTimer = this.opts.setTimer ?? setTimeout;
+    setTimer(() => {
+      if (stall !== this.stalls || this.disposed) return;
+      if (this.state && !this.held && this.media.readyState < HAVE_FUTURE_DATA)
+        this.setStalled(true);
+    }, this.opts.stallMs ?? 500);
+  }
+
+  /** Enough is loaded to play on: no longer buffering. */
+  private checkReady(): void {
+    if (this.media.readyState < HAVE_FUTURE_DATA) return;
+    this.stalls++;
+    this.setStalled(false);
+  }
+
+  private setStalled(stalled: boolean): void {
+    if (stalled === this.stalled) return;
+    this.stalled = stalled;
+    this.opts.onBuffering?.(stalled);
   }
 
   /** New media is loading: ignore its start-up events, then catch up. */

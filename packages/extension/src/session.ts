@@ -92,6 +92,8 @@ export class RoomSession {
   /** Local time the server was last heard from. */
   private lastHeard: number;
   private closed = false;
+  /** Whether this tab's video is stalled loading, as last told by setBuffering. */
+  private buffering = false;
   /** Sent after rejoining: what the user did while disconnected. */
   private queued: { intent?: IntentMessage; media?: MediaMessage } = {};
 
@@ -123,6 +125,9 @@ export class RoomSession {
       };
       if (this.snap.clientId) join.clientId = this.snap.clientId;
       this.send(join);
+      // A rejoining member keeps its old flag on the server, which may be stale.
+      if (this.buffering || this.snap.clientId)
+        this.send({ type: "buffering", buffering: this.buffering });
       const { intent, media } = this.queued;
       this.queued = {};
       if (media) this.send(media);
@@ -188,6 +193,14 @@ export class RoomSession {
     };
     if (this.snap.status === "joined") this.send(msg);
     else if (this.snap.status === "reconnecting") this.queued.media = msg;
+  }
+
+  /** Tell the room whether this tab's video is stalled loading. */
+  setBuffering(buffering: boolean): void {
+    if (buffering === this.buffering) return;
+    this.buffering = buffering;
+    if (this.snap.status === "joined")
+      this.send({ type: "buffering", buffering });
   }
 
   /**

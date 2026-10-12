@@ -136,6 +136,20 @@ describe("RoomSession", () => {
     expect(socket.sentTypes().filter((t) => t === "ping")).toHaveLength(5);
   });
 
+  it("reports buffering changes once joined", () => {
+    session.setBuffering(true);
+    expect(socket.sent).toEqual([]);
+    socket.onopen?.(new Event("open"));
+    expect(socket.sent[1]).toEqual({ type: "buffering", buffering: true });
+    welcome();
+    session.setBuffering(true);
+    session.setBuffering(false);
+    expect(socket.sent.filter((m) => m.type === "buffering")).toEqual([
+      { type: "buffering", buffering: true },
+      { type: "buffering", buffering: false },
+    ]);
+  });
+
   it("only sends intents once joined", () => {
     session.sendIntent({ type: "play", baseVersion: 0, position: 1 });
     welcome();
@@ -226,7 +240,21 @@ describe("RoomSession", () => {
       session.sendMedia("https://x.test/b");
       timers.shift()!.fn();
       socket.onopen?.(new Event("open"));
-      expect(socket.sentTypes()).toEqual(["join", "media", "seek", "ping"]);
+      expect(socket.sentTypes()).toEqual([
+        "join",
+        "buffering",
+        "media",
+        "seek",
+        "ping",
+      ]);
+    });
+
+    it("tells the room on rejoining whether the video is still buffering", () => {
+      joinAndDrop();
+      session.setBuffering(true);
+      timers.shift()!.fn();
+      socket.onopen?.(new Event("open"));
+      expect(socket.sent[1]).toEqual({ type: "buffering", buffering: true });
     });
 
     it("treats a silent connection as dropped", () => {

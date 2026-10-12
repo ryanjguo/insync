@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -166,6 +167,7 @@ func TestIntentBeforeJoin(t *testing.T) {
 	for _, msg := range []string{
 		`{"type":"pause","baseVersion":0,"position":1}`,
 		`{"type":"media","baseVersion":0,"mediaUrl":"https://x.test/v"}`,
+		`{"type":"buffering","buffering":true}`,
 	} {
 		send(ctx, t, conn, msg)
 		if m := recv(ctx, t, conn); !isError(protocol.ErrNotJoined)(m) {
@@ -261,4 +263,38 @@ func TestQuietClientIsDropped(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatal("bob was never dropped")
+}
+
+// TestBufferingPausesTheRoom: one member stalling pauses everyone, and the
+// room plays again when they're ready.
+func TestBufferingPausesTheRoom(t *testing.T) {
+	ts := newTestServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	alice, bob := dial(ctx, t, ts), dial(ctx, t, ts)
+	send(ctx, t, alice, `{"type":"join","protocolVersion":1,"roomId":"movie-night","name":"Alice","clientId":"alice-1"}`)
+	recv(ctx, t, alice)
+	send(ctx, t, bob, `{"type":"join","protocolVersion":1,"roomId":"movie-night","name":"Bob","clientId":"bob-1"}`)
+	recv(ctx, t, bob)
+	recv(ctx, t, alice) // presence
+	send(ctx, t, alice, `{"type":"play","baseVersion":0,"position":30}`)
+	recv(ctx, t, alice)
+	recv(ctx, t, bob)
+
+	for _, step := range []struct {
+		buffering bool
+		playing   bool
+	}{{true, false}, {false, true}} {
+		send(ctx, t, bob, fmt.Sprintf(`{"type":"buffering","buffering":%t}`, step.buffering))
+		for name, conn := range map[string]*websocket.Conn{"alice": alice, "bob": bob} {
+			p, ok := recv(ctx, t, conn).(protocol.Presence)
+			if !ok || len(p.Members) != 2 || p.Members[1].Buffering != step.buffering {
+				t.Fatalf("%s: got %+v, want bob's buffering=%t", name, p, step.buffering)
+			}
+			u, ok := recv(ctx, t, conn).(protocol.StateUpdate)
+			if !ok || u.Cause.Action != protocol.TypeBuffering || u.Cause.By != "bob-1" || u.State.Playing != step.playing {
+				t.Fatalf("%s: got %+v, want playing=%t because of bob's buffering", name, u, step.playing)
+			}
+		}
+	}
 }

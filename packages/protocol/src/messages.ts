@@ -25,6 +25,8 @@ export interface RoomState {
 export interface Member {
   clientId: string;
   name: string;
+  /** True while the member's video is stalled loading. Absent means false. */
+  buffering?: boolean;
 }
 
 // Client -> server
@@ -71,9 +73,15 @@ export interface PingMessage {
   clientTime: number;
 }
 
+/** Whether this client's video is stalled loading. The room waits for it while playing. */
+export interface BufferingMessage {
+  type: "buffering";
+  buffering: boolean;
+}
+
 export type IntentMessage = PlayMessage | PauseMessage | SeekMessage;
 export type ClientMessage =
-  JoinMessage | IntentMessage | MediaMessage | PingMessage;
+  JoinMessage | IntentMessage | MediaMessage | PingMessage | BufferingMessage;
 export type ClientMessageType = ClientMessage["type"];
 
 // Server -> client
@@ -89,8 +97,12 @@ export interface WelcomeMessage {
 
 export type IntentAction = IntentMessage["type"];
 
-/** What changed the room: a play, pause or seek, or a switch of video. */
-export type StateCause = IntentAction | MediaMessage["type"];
+/**
+ * What changed the room: a play, pause or seek, a switch of video, or the room
+ * pausing for (or resuming after) someone buffering.
+ */
+export type StateCause =
+  IntentAction | MediaMessage["type"] | BufferingMessage["type"];
 
 export interface StateMessage {
   type: "state";

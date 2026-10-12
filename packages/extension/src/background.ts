@@ -20,6 +20,8 @@ const PING_INTERVAL_MS = 20_000;
 interface Tab {
   session: RoomSession | null;
   ports: Set<chrome.runtime.Port>;
+  /** Ports whose video is stalled loading. */
+  buffering: Set<chrome.runtime.Port>;
   playBlocked: boolean;
   adShowing: boolean;
   /** Takes the tab to the room's video, and the room to the tab's. */
@@ -37,6 +39,7 @@ function tab(id: number): Tab {
     const entry: Tab = {
       session: null,
       ports: new Set(),
+      buffering: new Set(),
       playBlocked: false,
       adShowing: false,
       sent: null,
@@ -87,6 +90,11 @@ function push(t: Tab): void {
   for (const port of t.ports) port.postMessage(update);
 }
 
+/** Tell the room whether any of the tab's videos is buffering. */
+function reportBuffering(t: Tab): void {
+  t.session?.setBuffering(t.buffering.size > 0);
+}
+
 function leave(t: Tab): void {
   clearInterval(t.pinger);
   t.session?.close();
@@ -116,6 +124,7 @@ function join(
     },
   });
   t.session = session;
+  reportBuffering(t);
   t.pinger = setInterval(() => session.ping(), PING_INTERVAL_MS);
   // Ports drop whenever the service worker goes idle, so ask the tab's frames
   // to reconnect. Frames without a video, or without our script, ignore it.
@@ -149,10 +158,15 @@ chrome.runtime.onConnect.addListener((port) => {
       t.playBlocked = true;
     } else if (msg.kind === "ad") {
       t.adShowing = msg.showing;
+    } else if (msg.kind === "buffering") {
+      if (msg.buffering) t.buffering.add(port);
+      else t.buffering.delete(port);
+      reportBuffering(t);
     }
   });
   port.onDisconnect.addListener(() => {
     t.ports.delete(port);
+    if (t.buffering.delete(port)) reportBuffering(t);
     t.follower.setHasVideo(t.ports.size > 0);
   });
 });

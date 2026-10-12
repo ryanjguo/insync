@@ -44,6 +44,8 @@ func DecodeClientMessage(data []byte) (ClientMessage, error) {
 		msg = Media{BaseVersion: r.int("baseVersion", 0), MediaURL: r.mediaURL("mediaUrl")}
 	case TypePing:
 		msg = Ping{ClientTime: r.float("clientTime")}
+	case TypeBuffering:
+		msg = Buffering{Buffering: r.boolean("buffering")}
 	default:
 		return nil, fmt.Errorf("unknown client message type %q", typ)
 	}
@@ -75,9 +77,9 @@ func DecodeServerMessage(data []byte) (ServerMessage, error) {
 		if cause != nil {
 			m.Cause = Cause{Action: cause.str("action"), By: cause.id("by")}
 			switch m.Cause.Action {
-			case TypePlay, TypePause, TypeSeek, TypeMedia:
+			case TypePlay, TypePause, TypeSeek, TypeMedia, TypeBuffering:
 			default:
-				cause.fail("action", "must be play, pause, seek or media")
+				cause.fail("action", "must be play, pause, seek, media or buffering")
 			}
 			r.sub(cause)
 		}
@@ -269,7 +271,11 @@ func (r *reader) members(key string) []Member {
 			return nil
 		}
 		m := &reader{path: p, fields: fields}
-		out = append(out, Member{ClientID: m.id("clientId"), Name: m.name("name")})
+		member := Member{ClientID: m.id("clientId"), Name: m.name("name")}
+		if m.has("buffering") {
+			member.Buffering = m.boolean("buffering")
+		}
+		out = append(out, member)
 		r.sub(m)
 		if r.err != nil {
 			return nil

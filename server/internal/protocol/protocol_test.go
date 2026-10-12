@@ -57,6 +57,8 @@ func TestRoundTrip(t *testing.T) {
 		Intent{Action: TypeSeek, BaseVersion: 9, Position: 3600},
 		Media{BaseVersion: 2, MediaURL: "https://www.youtube.com/watch?v=abc"},
 		Ping{ClientTime: 123.456},
+		Buffering{Buffering: true},
+		Buffering{Buffering: false},
 	}
 	for _, m := range clientMsgs {
 		data, err := json.Marshal(m)
@@ -75,7 +77,9 @@ func TestRoundTrip(t *testing.T) {
 		Welcome{ClientID: "client-a1", RoomID: "movie-night", ServerTime: 1760300000123, State: state, Members: members},
 		StateUpdate{State: state, Cause: Cause{Action: TypeSeek, By: "client-a1"}},
 		StateUpdate{State: state, Cause: Cause{Action: TypeMedia, By: "client-a1"}},
+		StateUpdate{State: state, Cause: Cause{Action: TypeBuffering, By: "client-a1"}},
 		Presence{Members: members},
+		Presence{Members: []Member{{ClientID: "client-a1", Name: "Ryan", Buffering: true}}},
 		Pong{ClientTime: 1.5, ServerTime: 1760300000123},
 		Error{Code: ErrRoomFull, Message: "Room is full"},
 	}
@@ -102,6 +106,8 @@ func TestMarshalShape(t *testing.T) {
 		{Intent{Action: TypePause, BaseVersion: 2, Position: 4.5}, `{"type":"pause","baseVersion":2,"position":4.5}`},
 		{Join{ProtocolVersion: 1, RoomID: "room-1", Name: "Alex"}, `{"type":"join","protocolVersion":1,"roomId":"room-1","name":"Alex"}`},
 		{Presence{}, `{"type":"presence","members":[]}`},
+		{Buffering{Buffering: true}, `{"type":"buffering","buffering":true}`},
+		{Presence{Members: []Member{{ClientID: "a-1", Name: "A"}, {ClientID: "b-1", Name: "B", Buffering: true}}}, `{"type":"presence","members":[{"clientId":"a-1","name":"A"},{"clientId":"b-1","name":"B","buffering":true}]}`},
 		{Pong{ClientTime: 1, ServerTime: 2}, `{"type":"pong","clientTime":1,"serverTime":2}`},
 	}
 	for _, tc := range tests {
@@ -130,7 +136,7 @@ func TestDecodeDetails(t *testing.T) {
 		{name: "missing field", in: `{"type":"seek","baseVersion":0}`, wantErr: "message.position is required"},
 		{name: "unknown type", in: `{"type":"rewind"}`, wantErr: `unknown client message type "rewind"`},
 		{name: "nested path", server: true, in: `{"type":"presence","members":[{"clientId":"abcd","name":""}]}`, wantErr: "message.members[0].name must be 1-32 characters"},
-		{name: "cause path", server: true, in: `{"type":"state","state":{"mediaUrl":"","playing":false,"position":0,"updatedAt":0,"rate":1,"version":1},"cause":{"action":"rewind","by":"abcd"}}`, wantErr: "message.cause.action must be play, pause, seek or media"},
+		{name: "cause path", server: true, in: `{"type":"state","state":{"mediaUrl":"","playing":false,"position":0,"updatedAt":0,"rate":1,"version":1},"cause":{"action":"rewind","by":"abcd"}}`, wantErr: "message.cause.action must be play, pause, seek, media or buffering"},
 		{name: "media URL scheme", in: `{"type":"media","baseVersion":0,"mediaUrl":"file:///etc/passwd"}`, wantErr: "message.mediaUrl must be an http(s) URL"},
 		{name: "state path", server: true, in: `{"type":"state","state":{"mediaUrl":"","playing":false,"position":0,"updatedAt":0,"rate":9,"version":1},"cause":{"action":"play","by":"abcd"}}`, wantErr: "message.state.rate must be between 0.25 and 4"},
 	}

@@ -190,7 +190,7 @@ func TestJoinAndBroadcast(t *testing.T) {
 	if err := r.Join("bob", "Bob", bob, 2000); err != nil {
 		t.Fatal(err)
 	}
-	want := []Member{{"alice", "Alice"}, {"bob", "Bob"}}
+	want := []Member{{ClientID: "alice", Name: "Alice"}, {ClientID: "bob", Name: "Bob"}}
 	if mc, ok := alice.last().(MembersChanged); !ok || !slices.Equal(mc.Members, want) {
 		t.Fatalf("alice got %+v, want MembersChanged %v", alice.last(), want)
 	}
@@ -209,7 +209,7 @@ func TestJoinAndBroadcast(t *testing.T) {
 		}
 	}
 
-	r.Leave("bob", bob)
+	r.Leave("bob", bob, 0)
 	if mc, ok := alice.last().(MembersChanged); !ok || !slices.Equal(mc.Members, want[:1]) {
 		t.Fatalf("alice got %+v, want only herself left", alice.last())
 	}
@@ -222,7 +222,7 @@ func TestRejoinReplacesPeer(t *testing.T) {
 	_ = r.Join("alice", "Alice", fresh, 2000)
 
 	// The old connection closing must not remove the new one.
-	r.Leave("alice", old)
+	r.Leave("alice", old, 0)
 	if got := r.Members(); len(got) != 1 {
 		t.Fatalf("members = %v, want alice still there", got)
 	}
@@ -248,5 +248,118 @@ func TestRoomFull(t *testing.T) {
 	// A reconnect of someone already in the room still gets in.
 	if err := r.Join("a-id", "x", &recorder{}, 0); err != nil {
 		t.Fatalf("rejoin: %v", err)
+	}
+}
+
+// playingRoom returns a room playing from 10 s at time 1000, with alice and bob in it.
+func playingRoom(t *testing.T) (*Room, *recorder, *recorder) {
+	t.Helper()
+	r := New("room")
+	alice, bob := &recorder{}, &recorder{}
+	_ = r.Join("alice", "Alice", alice, 0)
+	_ = r.Join("bob", "Bob", bob, 0)
+	r.Apply(Play, 10, "alice", 1000)
+	return r, alice, bob
+}
+
+// lastState returns the last StateChanged p was sent.
+func lastState(t *testing.T, p *recorder) StateChanged {
+	t.Helper()
+	for i := len(p.events) - 1; i >= 0; i-- {
+		if sc, ok := p.events[i].(StateChanged); ok {
+			return sc
+		}
+	}
+	t.Fatal("no StateChanged sent")
+	return StateChanged{}
+}
+
+func TestBufferingPausesAndResumes(t *testing.T) {
+	r, alice, bob := playingRoom(t)
+
+	r.SetBuffering("bob", true, 3000)
+	sc := lastState(t, alice)
+	if sc.Action != Buffer || sc.By != "bob" || sc.State.Playing || sc.State.Position != 12 || sc.State.Version != 2 {
+		t.Fatalf("got %+v, want a pause at 12 for bob's buffering", sc)
+	}
+	wantMembers := []Member{{ClientID: "alice", Name: "Alice"}, {ClientID: "bob", Name: "Bob", Buffering: true}}
+	if got := r.Members(); !slices.Equal(got, wantMembers) {
+		t.Fatalf("members = %+v, want bob shown as buffering", got)
+	}
+	if !slices.ContainsFunc(alice.events, func(e Event) bool {
+		mc, ok := e.(MembersChanged)
+		return ok && slices.Equal(mc.Members, wantMembers)
+	}) {
+		t.Fatal("alice wasn't told bob is buffering")
+	}
+
+	r.SetBuffering("bob", false, 5000)
+	sc = lastState(t, bob)
+	if sc.Action != Buffer || !sc.State.Playing || sc.State.Position != 12 || sc.State.UpdatedAt != 5000 || sc.State.Version != 3 {
+		t.Fatalf("got %+v, want playing again from 12", sc)
+	}
+}
+
+func TestBufferingWaitsForEveryone(t *testing.T) {
+	r, alice, _ := playingRoom(t)
+	r.SetBuffering("alice", true, 2000)
+	r.SetBuffering("bob", true, 2500)
+	r.SetBuffering("alice", false, 3000)
+	if s := r.Snapshot(); s.Playing || s.Version != 2 {
+		t.Fatalf("state %+v, want still paused for bob", s)
+	}
+	r.SetBuffering("bob", false, 4000)
+	if sc := lastState(t, alice); !sc.State.Playing || sc.By != "bob" {
+		t.Fatalf("got %+v, want playing once bob is ready", sc)
+	}
+}
+
+func TestBufferingWhilePausedChangesNothing(t *testing.T) {
+	r := New("room")
+	_ = r.Join("alice", "Alice", &recorder{}, 0)
+	r.SetBuffering("alice", true, 1000)
+	r.SetBuffering("alice", false, 2000)
+	if s := r.Snapshot(); s.Playing || s.Version != 0 {
+		t.Fatalf("state %+v, want untouched", s)
+	}
+}
+
+func TestLeavingWhileBufferingResumes(t *testing.T) {
+	r, alice, bob := playingRoom(t)
+	r.SetBuffering("bob", true, 2000)
+	r.Leave("bob", bob, 3000)
+	if sc := lastState(t, alice); !sc.State.Playing || sc.Action != Buffer || sc.State.Position != 11 {
+		t.Fatalf("got %+v, want playing again from 11", sc)
+	}
+}
+
+func TestPlayOverridesWaiting(t *testing.T) {
+	r, _, _ := playingRoom(t)
+	r.SetBuffering("bob", true, 2000)
+	r.Apply(Play, 11, "alice", 2500) // don't wait for bob
+	r.SetBuffering("bob", false, 3000)
+	if s := r.Snapshot(); !s.Playing || s.Version != 3 {
+		t.Fatalf("state %+v, want alice's play and no extra resume", s)
+	}
+
+	r.SetBuffering("bob", true, 4000)
+	r.Apply(Pause, 12, "alice", 4500)
+	r.SetBuffering("bob", false, 5000)
+	if s := r.Snapshot(); s.Playing {
+		t.Fatalf("state %+v, want alice's pause to stick", s)
+	}
+}
+
+func TestRejoinKeepsBuffering(t *testing.T) {
+	r, alice, _ := playingRoom(t)
+	r.SetBuffering("bob", true, 2000)
+	fresh := &recorder{}
+	_ = r.Join("bob", "Bob", fresh, 2500)
+	if s := r.Snapshot(); s.Playing {
+		t.Fatal("rejoin resumed the room before bob was ready")
+	}
+	r.SetBuffering("bob", false, 3000)
+	if sc := lastState(t, alice); !sc.State.Playing {
+		t.Fatalf("got %+v, want playing once bob is ready", sc)
 	}
 }

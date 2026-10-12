@@ -94,7 +94,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	go writeLoop(ctx, conn, c)
 	defer func() {
 		if c.room != nil {
-			c.room.Leave(c.id, c)
+			c.room.Leave(c.id, c, s.now().UnixMilli())
 		}
 	}()
 
@@ -152,6 +152,12 @@ func (s *Server) handleMessage(c *client, msg protocol.ClientMessage) {
 			return
 		}
 		c.room.SetMedia(m.MediaURL, c.id, nowMs)
+	case protocol.Buffering:
+		if c.room == nil {
+			c.send(protocol.Error{Code: protocol.ErrNotJoined, Message: "join a room first"})
+			return
+		}
+		c.room.SetBuffering(c.id, m.Buffering, nowMs)
 	}
 }
 
@@ -206,7 +212,7 @@ func toMessage(e room.Event) protocol.ServerMessage {
 func toMembers(ms []room.Member) []protocol.Member {
 	out := make([]protocol.Member, len(ms))
 	for i, m := range ms {
-		out[i] = protocol.Member{ClientID: m.ClientID, Name: m.Name}
+		out[i] = protocol.Member{ClientID: m.ClientID, Name: m.Name, Buffering: m.Buffering}
 	}
 	return out
 }
