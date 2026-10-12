@@ -78,6 +78,9 @@ in each. Reload any tab that was already open before the extension loaded.
   from the beginning and keeping play or pause as it was. Joining a room from
   another page takes you to the room's video. On YouTube only watch and Shorts
   pages count, so browsing the home page or search doesn't move anyone.
+- **Joining mid-video.** The first person in a new room keeps their place:
+  the room starts from wherever their video already is. Anyone who joins after
+  that jumps to where the room is now.
 - **Not supported yet:** Netflix, Disney+ and other DRM sites, which use custom
   players that fight outside control and would need a per-site adapter.
 

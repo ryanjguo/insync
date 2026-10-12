@@ -89,7 +89,7 @@ function state(overrides: Partial<RoomState> = {}): RoomState {
     position: 0,
     updatedAt: 0,
     rate: 1,
-    version: 0,
+    version: 1,
     ...overrides,
   };
 }
@@ -238,7 +238,7 @@ describe("PlayerSync", () => {
     expect(sent).toEqual([]);
 
     media.userSeek(300); // after settling, the user's seeks count again
-    expect(sent).toEqual([{ type: "seek", baseVersion: 0, position: 300 }]);
+    expect(sent).toEqual([{ type: "seek", baseVersion: 1, position: 300 }]);
   });
 
   it("sits out an ad, then catches up with the room when it ends", () => {
@@ -277,6 +277,51 @@ describe("PlayerSync", () => {
     runTimers();
     expect(media.currentTime).toBe(20);
     expect(sent).toEqual([]);
+  });
+
+  describe("a fresh room", () => {
+    it("starts from where this video already is instead of going back to 0:00", () => {
+      media.currentTime = 754;
+      void media.play();
+      sync.apply(state({ version: 0 }));
+      expect(sent).toEqual([{ type: "play", baseVersion: 0, position: 754 }]);
+      expect(media.currentTime).toBe(754);
+      expect(media.paused).toBe(false);
+
+      // The same fresh state again (e.g. a clock update) doesn't send it twice.
+      sync.apply(state({ version: 0 }));
+      expect(sent).toHaveLength(1);
+
+      // The room agrees.
+      sync.apply(state({ playing: true, position: 754, updatedAt: now }));
+      expect(media.currentTime).toBe(754);
+      expect(sent).toHaveLength(1);
+    });
+
+    it("starts paused if this video is paused", () => {
+      media.currentTime = 30;
+      sync.apply(state({ version: 0 }));
+      expect(sent).toEqual([{ type: "pause", baseVersion: 0, position: 30 }]);
+    });
+
+    it("waits for newly loaded media to settle first", () => {
+      media.load(600);
+      sync.apply(state({ version: 0 }));
+      expect(sent).toEqual([]);
+      media.currentTime = 12; // the player restoring its saved position
+      runTimers();
+      expect(sent).toEqual([{ type: "pause", baseVersion: 0, position: 12 }]);
+    });
+
+    it("tells a room that started over again (a restarted server)", () => {
+      media.currentTime = 30;
+      sync.apply(state({ version: 0 }));
+      sync.apply(state({ position: 30 }));
+      sync.apply(null); // rejoined
+      media.currentTime = 95;
+      sync.apply(state({ version: 0 }));
+      expect(sent.map((i) => i.position)).toEqual([30, 95]);
+    });
   });
 
   describe("drift correction", () => {

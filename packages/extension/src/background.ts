@@ -106,7 +106,10 @@ function join(
     name: req.name,
     createSocket: (url) => new WebSocket(url),
     onChange: (snap) => {
-      t.follower.setRoom(inRoom(snap) ? (snap.state?.mediaUrl ?? null) : null);
+      t.follower.setRoom(
+        inRoom(snap) ? (snap.state?.mediaUrl ?? null) : null,
+        snap.state?.version === 0,
+      );
       push(t);
     },
   });
