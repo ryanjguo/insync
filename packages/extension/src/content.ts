@@ -15,7 +15,7 @@ import { findMainVideo, isAdShowing, isYouTube } from "./video";
 let port: chrome.runtime.Port | null = null;
 let video: HTMLVideoElement | null = null;
 let sync: PlayerSync | null = null;
-let room: RoomUpdate = { kind: "room", state: null, offsetMs: 0 };
+let room: RoomUpdate = { kind: "room", state: null, offsetMs: 0, joins: 0 };
 
 function post(msg: PlayerEvent): void {
   port?.postMessage(msg);
@@ -45,6 +45,9 @@ function connect(): void {
   port = chrome.runtime.connect({ name: PLAYER_PORT });
   if (sync?.isHeld) post({ kind: "ad", showing: true });
   port.onMessage.addListener((msg: RoomUpdate) => {
+    // After a rejoin the room may have started over (a restarted server), so
+    // its versions can be lower than what we had: forget the old state first.
+    if (msg.joins !== room.joins) sync?.apply(null);
     room = msg;
     sync?.apply(msg.state);
   });

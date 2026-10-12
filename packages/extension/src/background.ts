@@ -12,7 +12,7 @@ import {
   type RoomUpdate,
   type TabStatus,
 } from "./messages";
-import { RoomSession } from "./session";
+import { RoomSession, type SessionSnapshot } from "./session";
 
 /** Keepalive and clock-resync interval. A WebSocket message every 20 s also keeps the service worker alive. */
 const PING_INTERVAL_MS = 20_000;
@@ -53,14 +53,20 @@ function tab(id: number): Tab {
   return t;
 }
 
+/** Joined, or briefly disconnected and on the way back: keep following the last state meanwhile. */
+function inRoom(s: SessionSnapshot): boolean {
+  return s.status === "joined" || s.status === "reconnecting";
+}
+
 /** What the tab's players should follow: the room's state, unless the tab is on another video. */
 function roomUpdate(t: Tab): RoomUpdate {
   const s = t.session?.snapshot;
-  const following = s?.status === "joined" && t.follower.onRoomVideo;
+  const following = s && inRoom(s) && t.follower.onRoomVideo;
   return {
     kind: "room",
     state: following ? s.state : null,
     offsetMs: s?.offsetMs ?? 0,
+    joins: s?.joins ?? 0,
   };
 }
 
@@ -68,7 +74,12 @@ function roomUpdate(t: Tab): RoomUpdate {
 function push(t: Tab): void {
   const update = roomUpdate(t);
   const last = t.sent;
-  if (last && last.state === update.state && last.offsetMs === update.offsetMs)
+  if (
+    last &&
+    last.state === update.state &&
+    last.offsetMs === update.offsetMs &&
+    last.joins === update.joins
+  )
     return;
   t.sent = update;
   for (const port of t.ports) port.postMessage(update);
@@ -95,9 +106,7 @@ function join(
     name: req.name,
     createSocket: (url) => new WebSocket(url),
     onChange: (snap) => {
-      t.follower.setRoom(
-        snap.status === "joined" ? (snap.state?.mediaUrl ?? null) : null,
-      );
+      t.follower.setRoom(inRoom(snap) ? (snap.state?.mediaUrl ?? null) : null);
       push(t);
     },
   });
