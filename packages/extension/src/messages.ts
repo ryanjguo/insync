@@ -20,7 +20,10 @@ export interface RoomUpdate {
 
 /** Content script -> service worker. */
 export type PlayerEvent =
-  { kind: "intent"; intent: IntentMessage } | { kind: "playBlocked" };
+  | { kind: "intent"; intent: IntentMessage }
+  | { kind: "playBlocked" }
+  /** An ad started or ended. The video sits out the room until it ends. */
+  | { kind: "ad"; showing: boolean };
 
 /** Popup -> service worker, answered with a TabStatus. */
 export type PopupRequest =
@@ -40,4 +43,6 @@ export interface TabStatus {
   hasVideo: boolean;
   /** The browser refused to start playback in this tab (autoplay rules). */
   playBlocked: boolean;
+  /** An ad is playing in this tab, so it isn't following the room right now. */
+  adShowing: boolean;
 }

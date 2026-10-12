@@ -8,7 +8,7 @@ import {
   type RoomUpdate,
 } from "./messages";
 import { PlayerSync } from "./player";
-import { findMainVideo } from "./video";
+import { findMainVideo, isAdShowing, isYouTube } from "./video";
 
 let port: chrome.runtime.Port | null = null;
 let video: HTMLVideoElement | null = null;
@@ -26,10 +26,13 @@ function bind(): void {
   if (!found) return;
   sync?.dispose();
   video = found;
+  const youtube = isYouTube();
   sync = new PlayerSync(found, {
     serverNow: () => Date.now() + room.offsetMs,
     send: (intent) => post({ kind: "intent", intent }),
     onPlayBlocked: () => post({ kind: "playBlocked" }),
+    isHeld: () => youtube && isAdShowing(found),
+    onHeldChange: (held) => post({ kind: "ad", showing: held }),
   });
   sync.apply(room.state);
   connect();
@@ -38,6 +41,7 @@ function bind(): void {
 function connect(): void {
   if (port || !video || !chrome.runtime?.id) return;
   port = chrome.runtime.connect({ name: PLAYER_PORT });
+  if (sync?.isHeld) post({ kind: "ad", showing: true });
   port.onMessage.addListener((msg: RoomUpdate) => {
     room = msg;
     sync?.apply(msg.state);

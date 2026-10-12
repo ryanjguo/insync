@@ -39,9 +39,11 @@ function render(s: TabStatus): void {
       : "";
   $("video-note").textContent = !s.hasVideo
     ? "No video found on this page yet."
-    : s.playBlocked
-      ? "Chrome blocked playback here. Click play once in this tab."
-      : "";
+    : s.adShowing
+      ? "An ad is playing here. This tab catches up when it ends."
+      : s.playBlocked
+        ? "Chrome blocked playback here. Click play once in this tab."
+        : "";
 }
 
 async function main(): Promise<void> {

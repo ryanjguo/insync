@@ -9,6 +9,7 @@ import { PlayerSync, type Media } from "../src/player";
  */
 class FakeMedia implements Media {
   paused = true;
+  duration = NaN;
   blockPlay = false;
   deferEvents = false;
   private time = 0;
@@ -50,6 +51,16 @@ class FakeMedia implements Media {
   userSeek(t: number): void {
     this.currentTime = t;
   }
+  /** What the page does when it loads new media into the same element. */
+  load(duration: number): void {
+    this.duration = duration;
+    this.time = 0;
+    this.fire("loadedmetadata");
+  }
+  /** What a player does while playing: report progress. */
+  tick(): void {
+    this.fire("timeupdate");
+  }
   /** Let time pass while playing, without firing events. */
   advance(sec: number): void {
     if (!this.paused) this.time += sec;
@@ -86,17 +97,27 @@ describe("PlayerSync", () => {
   let sent: IntentMessage[];
   let now: number;
   let blocked: number;
+  let ad: boolean;
+  let heldChanges: boolean[];
+  let timers: (() => void)[];
   let sync: PlayerSync;
+  const runTimers = () => timers.splice(0).forEach((fn) => fn());
 
   beforeEach(() => {
     media = new FakeMedia();
     sent = [];
     now = 10_000;
     blocked = 0;
+    ad = false;
+    heldChanges = [];
+    timers = [];
     sync = new PlayerSync(media, {
       serverNow: () => now,
       send: (i) => sent.push(i),
       onPlayBlocked: () => blocked++,
+      isHeld: () => ad,
+      onHeldChange: (h) => heldChanges.push(h),
+      setTimer: (fn) => timers.push(fn),
     });
   });
 
@@ -189,6 +210,67 @@ describe("PlayerSync", () => {
     sync.apply(state({ version: 1 }));
     sync.dispose();
     media.userSeek(50);
+    expect(sent).toEqual([]);
+  });
+
+  it("does not seek past the end of a shorter video", () => {
+    media.duration = 60;
+    sync.apply(state({ position: 300 }));
+    expect(media.currentTime).toBe(59);
+  });
+
+  it("ignores the start-up events of newly loaded media, then catches up", () => {
+    sync.apply(state({ playing: true, position: 100, updatedAt: now }));
+    media.load(600); // e.g. YouTube loading a video in place
+    media.userSeek(42); // the player restoring its own saved position
+    media.userPause();
+    expect(sent).toEqual([]);
+
+    now += 1000;
+    runTimers();
+    expect(media.currentTime).toBeCloseTo(101);
+    expect(media.paused).toBe(false);
+    expect(sent).toEqual([]);
+
+    media.userSeek(300); // after settling, the user's seeks count again
+    expect(sent).toEqual([{ type: "seek", baseVersion: 0, position: 300 }]);
+  });
+
+  it("sits out an ad, then catches up with the room when it ends", () => {
+    sync.apply(state({ playing: true, position: 10, updatedAt: now }));
+    ad = true;
+    media.load(15); // the ad replaces the video
+    media.userPause(); // pausing the ad is not a room pause
+    media.userSeek(3);
+    expect(heldChanges).toEqual([true]);
+
+    // The room moves on while the ad plays; the ad is left alone.
+    sync.apply(
+      state({ playing: true, position: 50, updatedAt: now, version: 1 }),
+    );
+    runTimers();
+    expect(media.currentTime).toBe(3);
+    expect(media.paused).toBe(true);
+
+    ad = false;
+    now += 4000;
+    media.load(600); // back to the video
+    expect(heldChanges).toEqual([true, false]);
+    runTimers();
+    expect(media.currentTime).toBeCloseTo(54);
+    expect(media.paused).toBe(false);
+    expect(sent).toEqual([]);
+  });
+
+  it("notices an ad ending from progress events alone", () => {
+    sync.apply(state({ position: 20 }));
+    ad = true;
+    media.tick();
+    media.userSeek(0);
+    ad = false;
+    media.tick();
+    runTimers();
+    expect(media.currentTime).toBe(20);
     expect(sent).toEqual([]);
   });
 });
