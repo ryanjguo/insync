@@ -15,8 +15,11 @@ export interface Media {
   readonly seeking: boolean;
   /** Seconds; NaN until known, Infinity for live streams. */
   readonly duration: number;
-  /** HTMLMediaElement.readyState: 3 (HAVE_FUTURE_DATA) or more means it can play on. */
-  readonly readyState: number;
+  /**
+   * HTMLMediaElement.readyState: 3 (HAVE_FUTURE_DATA) or more means it can
+   * play on. A media without one (like a simulated video) never buffers.
+   */
+  readonly readyState?: number;
   play(): Promise<void>;
   pause(): void;
   addEventListener(type: string, listener: () => void): void;
@@ -313,7 +316,7 @@ export class PlayerSync {
     this.held = held;
     this.opts.onHeldChange?.(held);
     if (held) this.setStalled(false);
-    if (!held) this.onLoad();
+    else this.onLoad();
   }
 
   /** The video ran out of data. If it stays stuck while following, report it. */
@@ -323,16 +326,20 @@ export class PlayerSync {
     const setTimer = this.opts.setTimer ?? setTimeout;
     setTimer(() => {
       if (stall !== this.stalls || this.disposed) return;
-      if (this.state && !this.held && this.media.readyState < HAVE_FUTURE_DATA)
-        this.setStalled(true);
+      if (this.state && !this.held && !this.canPlayOn()) this.setStalled(true);
     }, this.opts.stallMs ?? 500);
   }
 
   /** Enough is loaded to play on: no longer buffering. */
   private checkReady(): void {
-    if (this.media.readyState < HAVE_FUTURE_DATA) return;
+    if (!this.canPlayOn()) return;
     this.stalls++;
     this.setStalled(false);
+  }
+
+  /** Whether enough is loaded to keep playing. */
+  private canPlayOn(): boolean {
+    return (this.media.readyState ?? HAVE_FUTURE_DATA) >= HAVE_FUTURE_DATA;
   }
 
   private setStalled(stalled: boolean): void {
