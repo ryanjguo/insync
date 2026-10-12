@@ -13,6 +13,7 @@ func TestExpectedPosition(t *testing.T) {
 		{"playing at 1x", State{Playing: true, Position: 10, UpdatedAt: 1000, Rate: 1}, 3000, 12},
 		{"playing at 2x", State{Playing: true, Position: 10, UpdatedAt: 1000, Rate: 2}, 3000, 14},
 		{"playing at 0.5x", State{Playing: true, Position: 0, UpdatedAt: 0, Rate: 0.5}, 4000, 2},
+		{"scheduled start holds position", State{Playing: true, Position: 10, UpdatedAt: 5000, Rate: 1}, 4800, 10},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

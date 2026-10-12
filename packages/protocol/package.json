@@ -1,0 +1,8 @@
+{
+  "name": "@wps/protocol",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Wire message types and validators shared by the extension, the harness and (mirrored in Go) the server.",
+  "exports": "./src/index.ts"
+}

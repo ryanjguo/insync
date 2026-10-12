@@ -2,7 +2,9 @@
 package server
 
 import (
-	"encoding/json"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -51,37 +53,56 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	for {
-		var msg protocol.Message
-		if err := wsjson.Read(ctx, conn, &msg); err != nil {
-			return // client went away or sent a malformed frame
+		_, data, err := conn.Read(ctx)
+		if err != nil {
+			return // client went away
 		}
-		reply := s.handleMessage(msg)
+		var reply protocol.ServerMessage
+		if msg, err := protocol.DecodeClientMessage(data); err != nil {
+			reply = protocol.Error{Code: protocol.ErrBadMessage, Message: err.Error()}
+		} else {
+			reply = s.handleMessage(msg)
+		}
 		if err := wsjson.Write(ctx, conn, reply); err != nil {
 			return
 		}
 	}
 }
 
-func (s *Server) handleMessage(msg protocol.Message) protocol.Message {
-	switch msg.Type {
-	case protocol.TypePing:
-		return protocol.Message{
-			Type:       protocol.TypePong,
-			ClientTime: msg.ClientTime,
+func (s *Server) handleMessage(msg protocol.ClientMessage) protocol.ServerMessage {
+	switch m := msg.(type) {
+	case protocol.Ping:
+		return protocol.Pong{ClientTime: m.ClientTime, ServerTime: s.now().UnixMilli()}
+	case protocol.Join:
+		if m.ProtocolVersion != protocol.ProtocolVersion {
+			return protocol.Error{
+				Code:    protocol.ErrUnsupportedVersion,
+				Message: fmt.Sprintf("server speaks protocol version %d", protocol.ProtocolVersion),
+			}
+		}
+		clientID := m.ClientID
+		if clientID == "" {
+			clientID = newClientID()
+		}
+		// Rooms don't track members yet, so the joiner is the only one listed.
+		return protocol.Welcome{
+			ClientID:   clientID,
+			RoomID:     m.RoomID,
 			ServerTime: s.now().UnixMilli(),
+			State:      s.rooms.GetOrCreate(m.RoomID).Snapshot(),
+			Members:    []protocol.Member{{ClientID: clientID, Name: m.Name}},
 		}
-	case protocol.TypeJoin:
-		if msg.RoomID == "" {
-			return errorMessage("roomId is required")
-		}
-		st := s.rooms.GetOrCreate(msg.RoomID).Snapshot()
-		return protocol.Message{Type: protocol.TypeState, RoomID: msg.RoomID, State: &st}
 	default:
-		b, _ := json.Marshal(msg.Type)
-		return errorMessage("unknown message type " + string(b))
+		// play, pause and seek are valid but the room doesn't apply them yet.
+		return protocol.Error{
+			Code:    protocol.ErrBadMessage,
+			Message: fmt.Sprintf("%s is not supported by this server yet", msg.ClientType()),
+		}
 	}
 }
 
-func errorMessage(text string) protocol.Message {
-	return protocol.Message{Type: protocol.TypeError, Error: text}
+func newClientID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }

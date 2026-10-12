@@ -36,7 +36,14 @@
       const room = new URLSearchParams(location.search).get("room") || "test";
       const ws = new WebSocket(`ws://${location.host}/ws`);
       ws.onopen = () => {
-        ws.send(JSON.stringify({ type: "join", roomId: room }));
+        ws.send(
+          JSON.stringify({
+            type: "join",
+            protocolVersion: 1,
+            roomId: room,
+            name: "Test page",
+          }),
+        );
         ws.send(JSON.stringify({ type: "ping", clientTime: Date.now() }));
       };
       ws.onmessage = (e) => {

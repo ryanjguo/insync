@@ -15,8 +15,9 @@ type State struct {
 }
 
 // ExpectedPosition returns where playback should be at server time nowMs.
+// Before a scheduled start (UpdatedAt in the future) the position holds.
 func (s State) ExpectedPosition(nowMs int64) float64 {
-	if !s.Playing {
+	if !s.Playing || nowMs <= s.UpdatedAt {
 		return s.Position
 	}
 	return s.Position + float64(nowMs-s.UpdatedAt)/1000*s.Rate
