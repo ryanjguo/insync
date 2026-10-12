@@ -66,6 +66,7 @@ function roomUpdate(t: Tab): RoomUpdate {
     kind: "room",
     state: following ? s.state : null,
     offsetMs: s?.offsetMs ?? 0,
+    rttMs: s?.rttMs ?? null,
     joins: s?.joins ?? 0,
   };
 }
@@ -78,6 +79,7 @@ function push(t: Tab): void {
     last &&
     last.state === update.state &&
     last.offsetMs === update.offsetMs &&
+    last.rttMs === update.rttMs &&
     last.joins === update.joins
   )
     return;

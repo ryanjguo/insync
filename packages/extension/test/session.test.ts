@@ -132,6 +132,7 @@ describe("RoomSession", () => {
       });
     }
     expect(session.snapshot.offsetMs).toBe(3_000);
+    expect(session.snapshot.rttMs).toBe(20);
     expect(socket.sentTypes().filter((t) => t === "ping")).toHaveLength(5);
   });
 

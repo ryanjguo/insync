@@ -1,4 +1,8 @@
-import type { PopupRequest, TabStatus } from "./messages";
+import {
+  DEBUG_OVERLAY_KEY,
+  type PopupRequest,
+  type TabStatus,
+} from "./messages";
 
 const DEFAULT_SERVER = "ws://localhost:8080/ws";
 
@@ -10,6 +14,7 @@ const nameInput = $<HTMLInputElement>("name");
 const serverInput = $<HTMLInputElement>("server");
 const inRoom = $("in-room");
 const errorEl = $("error");
+const debugInput = $<HTMLInputElement>("debug-overlay");
 
 function randomRoomCode(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(4));
@@ -59,7 +64,16 @@ async function main(): Promise<void> {
   const tabId = tab?.id;
   if (tabId === undefined) return;
 
-  const saved = await chrome.storage.local.get(["name", "server", "room"]);
+  const saved = await chrome.storage.local.get([
+    "name",
+    "server",
+    "room",
+    DEBUG_OVERLAY_KEY,
+  ]);
+  debugInput.checked = saved[DEBUG_OVERLAY_KEY] === true;
+  debugInput.addEventListener("change", () => {
+    void chrome.storage.local.set({ [DEBUG_OVERLAY_KEY]: debugInput.checked });
+  });
   nameInput.value = (saved.name as string | undefined) ?? "";
   serverInput.value = (saved.server as string | undefined) ?? DEFAULT_SERVER;
   roomInput.value = (saved.room as string | undefined) ?? randomRoomCode();

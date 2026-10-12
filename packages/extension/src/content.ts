@@ -4,18 +4,26 @@
 import { mediaKey } from "./follow";
 import {
   CONNECT_REQUEST,
+  DEBUG_OVERLAY_KEY,
   PLAYER_PORT,
   type PageReport,
   type PlayerEvent,
   type RoomUpdate,
 } from "./messages";
+import { DebugOverlay, formatOverlay } from "./overlay";
 import { PlayerSync } from "./player";
 import { findMainVideo, isAdShowing, isYouTube } from "./video";
 
 let port: chrome.runtime.Port | null = null;
 let video: HTMLVideoElement | null = null;
 let sync: PlayerSync | null = null;
-let room: RoomUpdate = { kind: "room", state: null, offsetMs: 0, joins: 0 };
+let room: RoomUpdate = {
+  kind: "room",
+  state: null,
+  offsetMs: 0,
+  rttMs: null,
+  joins: 0,
+};
 
 function post(msg: PlayerEvent): void {
   port?.postMessage(msg);
@@ -97,3 +105,36 @@ new MutationObserver(() => {
     bind();
   }, 250);
 }).observe(document.documentElement, { childList: true, subtree: true });
+
+// Debug overlay, in frames with a video, while the popup's toggle is on.
+let overlay: DebugOverlay | null = null;
+let overlayTimer: ReturnType<typeof setInterval> | undefined;
+
+function drawOverlay(): void {
+  if (!sync) return overlay?.hide();
+  overlay ??= new DebugOverlay();
+  overlay.show(
+    formatOverlay({
+      stats: sync.stats(),
+      offsetMs: room.offsetMs,
+      rttMs: room.rttMs,
+      playing: room.state?.playing ?? null,
+    }),
+  );
+}
+
+function setOverlay(on: boolean): void {
+  clearInterval(overlayTimer);
+  if (!on) return overlay?.hide();
+  drawOverlay();
+  overlayTimer = setInterval(drawOverlay, 250);
+}
+
+chrome.storage.local
+  .get(DEBUG_OVERLAY_KEY)
+  .then((saved) => setOverlay(saved[DEBUG_OVERLAY_KEY] === true))
+  .catch(() => {});
+chrome.storage.onChanged.addListener((changes, area) => {
+  const change = changes[DEBUG_OVERLAY_KEY];
+  if (area === "local" && change) setOverlay(change.newValue === true);
+});
