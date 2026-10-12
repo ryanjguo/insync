@@ -1,0 +1,13 @@
+{
+  "name": "@wps/harness",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Simulated clients that run the real sync-core against fake video clocks and report drift.",
+  "scripts": {
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@wps/sync-core": "*"
+  }
+}
