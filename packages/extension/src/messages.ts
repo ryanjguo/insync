@@ -41,6 +41,14 @@ export interface PageReport {
   mediaKey: string | null;
 }
 
+/** Top frame's content script -> service worker: the page was opened from an invite link. */
+export interface InviteReport {
+  kind: "invite";
+  roomId: string;
+  /** Null to use the server the extension is set to. */
+  serverUrl: string | null;
+}
+
 /** Popup -> service worker, answered with a TabStatus. */
 export type PopupRequest =
   | {
@@ -64,4 +72,6 @@ export interface TabStatus {
   adShowing: boolean;
   /** The tab is on the room's video (false while it's switching to or from it). */
   onRoomVideo: boolean;
+  /** The server the tab's room is on, or null when not in one. */
+  serverUrl: string | null;
 }

@@ -2,10 +2,12 @@
 // to the service worker and keeps that video following the tab's room.
 
 import { mediaKey } from "./follow";
+import { parseInvite } from "./invite";
 import {
   CONNECT_REQUEST,
   DEBUG_OVERLAY_KEY,
   PLAYER_PORT,
+  type InviteReport,
   type PageReport,
   type PlayerEvent,
   type RoomUpdate,
@@ -70,6 +72,8 @@ function connect(): void {
 /** The top frame tells the service worker which page the tab is on, so the room can follow it. */
 const isTop = window === window.top;
 let reportedHref: string | null = null;
+/** The last URL checked for an invite: each is acted on once, not on every report. */
+let inviteHref: string | null = null;
 
 function reportPage(force = false): void {
   if (!isTop || !chrome.runtime?.id) return;
@@ -80,6 +84,13 @@ function reportPage(force = false): void {
     mediaKey: mediaKey(location.href),
   };
   chrome.runtime.sendMessage(report).catch(() => {});
+  if (location.href === inviteHref) return;
+  inviteHref = location.href;
+  const invite = parseInvite(location.href);
+  if (invite) {
+    const msg: InviteReport = { kind: "invite", ...invite };
+    chrome.runtime.sendMessage(msg).catch(() => {});
+  }
 }
 
 // When a tab joins a room, the service worker asks its frames to connect.
