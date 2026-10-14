@@ -84,6 +84,15 @@ in each. Reload any tab that was already open before the extension loaded.
 - **Not supported yet:** Netflix, Disney+ and other DRM sites, which use custom
   players that fight outside control and would need a per-site adapter.
 
+### Inviting someone
+
+Once you're in a room, click **Copy invite link** in the popup and send the
+link. It's the room's video page with the room code added after a `#` (and
+the server, if you aren't using the default one), for example
+`https://www.youtube.com/watch?v=abc123#insync=7f3a9c21`. Opening it with the
+extension installed joins that tab to the room straight away, using the name
+saved in the popup (or "Guest"). The part after `#` never reaches the site.
+
 ### Dropped connections
 
 If the connection to the server drops (Wi-Fi blip, laptop sleep, server

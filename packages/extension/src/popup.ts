@@ -1,11 +1,10 @@
 import type { ChatLineMessage } from "@wps/protocol";
+import { DEFAULT_SERVER, inviteLink } from "./invite";
 import {
   DEBUG_OVERLAY_KEY,
   type PopupRequest,
   type TabStatus,
 } from "./messages";
-
-const DEFAULT_SERVER = "ws://localhost:8080/ws";
 
 const $ = <T extends HTMLElement>(id: string) =>
   document.getElementById(id) as T;
@@ -19,6 +18,12 @@ const debugInput = $<HTMLInputElement>("debug-overlay");
 const chatLog = $("chat-log");
 const chatForm = $<HTMLFormElement>("chat-form");
 const chatInput = $<HTMLInputElement>("chat-input");
+const inviteButton = $<HTMLButtonElement>("copy-invite");
+
+/** The invite link for the room this tab is in, or null. Set on every render. */
+let invite: string | null = null;
+/** The tab's URL, for an invite before the room knows its video. */
+let tabUrl = "";
 
 function randomRoomCode(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(4));
@@ -67,6 +72,12 @@ function render(s: TabStatus): void {
   chatInput.disabled = !joined;
 
   $("room-id").textContent = session.roomId;
+  invite = inviteLink(
+    session.state?.mediaUrl || tabUrl,
+    session.roomId,
+    s.serverUrl ?? DEFAULT_SERVER,
+  );
+  inviteButton.disabled = invite === null;
   $("status").textContent =
     session.status === "joined"
       ? ""
@@ -100,6 +111,7 @@ async function main(): Promise<void> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const tabId = tab?.id;
   if (tabId === undefined) return;
+  tabUrl = tab?.url ?? "";
 
   const saved = await chrome.storage.local.get([
     "name",
@@ -141,6 +153,13 @@ async function main(): Promise<void> {
     void request({ kind: "chat", tabId, text }).then(render);
     // Our message comes back from the server: show it without waiting for the next refresh.
     setTimeout(() => void refresh(), 200);
+  });
+  inviteButton.addEventListener("click", () => {
+    if (!invite) return;
+    void navigator.clipboard.writeText(invite).then(() => {
+      inviteButton.textContent = "Copied!";
+      setTimeout(() => (inviteButton.textContent = "Copy invite link"), 1500);
+    });
   });
   $("leave").addEventListener("click", () => {
     void request({ kind: "leave", tabId }).then(render);

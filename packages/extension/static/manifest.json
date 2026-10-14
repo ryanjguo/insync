@@ -3,7 +3,7 @@
   "name": "Watch Party Sync",
   "version": "0.0.0",
   "description": "Keep everyone's video playback in sync.",
-  "permissions": ["storage"],
+  "permissions": ["storage", "activeTab"],
   "background": { "service_worker": "background.js", "type": "module" },
   "action": { "default_popup": "popup.html" },
   "content_scripts": [

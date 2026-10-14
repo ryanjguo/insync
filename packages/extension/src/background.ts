@@ -3,9 +3,11 @@
 // tabs in the same room sync with each other like two people would.
 
 import { MediaFollower } from "./follow";
+import { DEFAULT_SERVER } from "./invite";
 import {
   CONNECT_REQUEST,
   PLAYER_PORT,
+  type InviteReport,
   type PageReport,
   type PlayerEvent,
   type PopupRequest,
@@ -19,6 +21,8 @@ const PING_INTERVAL_MS = 20_000;
 
 interface Tab {
   session: RoomSession | null;
+  /** The server the session connects to. */
+  serverUrl: string | null;
   ports: Set<chrome.runtime.Port>;
   /** Ports whose video is stalled loading. */
   buffering: Set<chrome.runtime.Port>;
@@ -40,6 +44,7 @@ function tab(id: number): Tab {
   if (!t) {
     const entry: Tab = {
       session: null,
+      serverUrl: null,
       ports: new Set(),
       buffering: new Set(),
       playBlocked: false,
@@ -140,11 +145,35 @@ function join(
     },
   });
   t.session = session;
+  t.serverUrl = req.serverUrl;
   reportBuffering(t);
   t.pinger = setInterval(() => session.ping(), PING_INTERVAL_MS);
   // Ports drop whenever the service worker goes idle, so ask the tab's frames
   // to reconnect. Frames without a video, or without our script, ignore it.
   chrome.tabs.sendMessage(tabId, CONNECT_REQUEST).catch(() => {});
+}
+
+/**
+ * The tab was opened from an invite link: join its room with the saved name
+ * and server, unless the tab is already in that room.
+ */
+async function acceptInvite(
+  tabId: number,
+  invite: InviteReport,
+): Promise<void> {
+  const current = tabs.get(tabId)?.session?.snapshot;
+  if (
+    current &&
+    current.roomId === invite.roomId &&
+    current.status !== "closed"
+  )
+    return;
+  const saved = await chrome.storage.local.get(["name", "server"]);
+  const name = (saved.name as string | undefined)?.trim() || "Guest";
+  const serverUrl =
+    invite.serverUrl ?? (saved.server as string | undefined) ?? DEFAULT_SERVER;
+  join(tabId, { kind: "join", tabId, roomId: invite.roomId, name, serverUrl });
+  await chrome.storage.local.set({ room: invite.roomId });
 }
 
 function status(tabId: number): TabStatus {
@@ -157,6 +186,7 @@ function status(tabId: number): TabStatus {
     playBlocked: t?.playBlocked ?? false,
     adShowing: t?.adShowing ?? false,
     onRoomVideo: t?.follower.onRoomVideo ?? false,
+    serverUrl: t?.session ? t.serverUrl : null,
   };
 }
 
@@ -190,7 +220,17 @@ chrome.runtime.onConnect.addListener((port) => {
 });
 
 chrome.runtime.onMessage.addListener(
-  (req: PopupRequest | PageReport, sender, reply: (s: TabStatus) => void) => {
+  (
+    req: PopupRequest | PageReport | InviteReport,
+    sender,
+    reply: (s: TabStatus) => void,
+  ) => {
+    if (req.kind === "invite") {
+      const tabId = sender.tab?.id;
+      if (tabId !== undefined && sender.frameId === 0)
+        acceptInvite(tabId, req).catch(() => {});
+      return;
+    }
     if (req.kind === "page") {
       const tabId = sender.tab?.id;
       if (tabId !== undefined && sender.frameId === 0) {
