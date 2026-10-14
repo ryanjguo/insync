@@ -102,6 +102,14 @@ func TestWebSocket(t *testing.T) {
 			},
 		},
 		{
+			"a rate change is applied and echoed back",
+			`{"type":"rate","baseVersion":1,"rate":1.5}`,
+			func(m protocol.ServerMessage) bool {
+				u, ok := m.(protocol.StateUpdate)
+				return ok && u.Cause.Action == protocol.TypeRate && u.State.Rate == 1.5 && u.State.Version == 2
+			},
+		},
+		{
 			"a ping after joining still gets a pong and records the round trip",
 			`{"type":"ping","clientTime":1,"rttMs":400}`,
 			func(m protocol.ServerMessage) bool {

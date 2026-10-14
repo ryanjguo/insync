@@ -280,6 +280,55 @@
     }
   },
   {
+    "name": "rate",
+    "direction": "client",
+    "valid": true,
+    "message": {
+      "type": "rate",
+      "baseVersion": 4,
+      "rate": 1.5
+    }
+  },
+  {
+    "name": "rate at the slowest allowed",
+    "direction": "client",
+    "valid": true,
+    "message": {
+      "type": "rate",
+      "baseVersion": 0,
+      "rate": 0.25
+    }
+  },
+  {
+    "name": "rate too fast",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "rate",
+      "baseVersion": 4,
+      "rate": 4.5
+    }
+  },
+  {
+    "name": "rate zero",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "rate",
+      "baseVersion": 4,
+      "rate": 0
+    }
+  },
+  {
+    "name": "rate missing baseVersion",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "rate",
+      "rate": 1
+    }
+  },
+  {
     "name": "ping",
     "direction": "client",
     "valid": true,
@@ -699,6 +748,26 @@
       },
       "cause": {
         "action": "seek",
+        "by": "client-a1"
+      }
+    }
+  },
+  {
+    "name": "state caused by a rate change",
+    "direction": "server",
+    "valid": true,
+    "message": {
+      "type": "state",
+      "state": {
+        "mediaUrl": "https://www.youtube.com/watch?v=abc",
+        "playing": true,
+        "position": 12.5,
+        "updatedAt": 1760300000000,
+        "rate": 1.5,
+        "version": 3
+      },
+      "cause": {
+        "action": "rate",
         "by": "client-a1"
       }
     }

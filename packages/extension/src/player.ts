@@ -1,7 +1,9 @@
 import {
+  MAX_RATE,
+  MIN_RATE,
   expectedPosition,
+  type ControlMessage,
   type IntentAction,
-  type IntentMessage,
   type RoomState,
 } from "@wps/protocol";
 import { correct, defaultDriftConfig, type DriftConfig } from "@wps/sync-core";
@@ -29,8 +31,8 @@ export interface Media {
 export interface PlayerSyncOptions {
   /** Current server time in ms (local clock plus the estimated offset). */
   serverNow: () => number;
-  /** Called with each play, pause or seek the user makes. */
-  send: (intent: IntentMessage) => void;
+  /** Called with each play, pause, seek or speed change the user makes. */
+  send: (intent: ControlMessage) => void;
   /** Called when the browser refuses to start playback (autoplay rules). */
   onPlayBlocked?: () => void;
   /** Applying state seeks only when the video is further off than this. Seconds. */
@@ -140,6 +142,11 @@ const END_MARGIN_SEC = 1;
  * video waits until the room reaches it. A pause the video gets while waiting
  * is taken as our own, not as the user's.
  *
+ * Speed: the video plays at the room's rate. A playbackRate this class didn't
+ * set (the user picked another speed) is sent as a `rate` change. Like the
+ * other events, a ratechange only counts when the rate differs from the last
+ * one set here, so drift nudges and the room's own changes aren't echoed.
+ *
  * Buffering: when the video stalls for data for more than `stallMs` while
  * following the room, `onBuffering(true)` lets the room pause for it;
  * `onBuffering(false)` follows once it has enough loaded to play on.
@@ -159,6 +166,8 @@ export class PlayerSync {
   private seeded = false;
   /** Whether playbackRate is currently nudged away from the room's rate. */
   private nudged = false;
+  /** The playbackRate this class last set, or null if it hasn't set one. */
+  private appliedRate: number | null = null;
   private lastDriftCheck = -Infinity;
   private lastDriftSeek = -Infinity;
   /** Whether onBuffering last reported a stall. */
@@ -188,6 +197,7 @@ export class PlayerSync {
         () => this.checkHeld(),
       ]),
       ["timeupdate", () => this.correctDrift()],
+      ["ratechange", () => this.onRateChange()],
       ["loadedmetadata", () => this.onLoad()],
       ["waiting", () => this.onWaiting()],
       ...READY_EVENTS.map((event): [string, () => void] => [
@@ -258,9 +268,12 @@ export class PlayerSync {
       if (!this.seeded) {
         this.seeded = true;
         this.report(this.media.paused ? "pause" : "play", state);
+        this.onRateChange();
       }
       return;
     }
+    this.nudged = false;
+    this.setRate(state.rate);
     if (state.playing && this.opts.serverNow() < state.updatedAt) {
       this.awaitStart(state);
       return;
@@ -361,8 +374,7 @@ export class PlayerSync {
       // A rate nudge, or a seek still cooling down: nudge toward the room meanwhile.
       const ahead = media.currentTime > target;
       this.nudged = true;
-      media.playbackRate =
-        state.rate * (ahead ? 1 - config.nudge : 1 + config.nudge);
+      this.setRate(state.rate * (ahead ? 1 - config.nudge : 1 + config.nudge));
     }
   }
 
@@ -370,7 +382,37 @@ export class PlayerSync {
   private unnudge(): void {
     if (!this.nudged) return;
     this.nudged = false;
-    this.media.playbackRate = this.state?.rate ?? 1;
+    this.setRate(this.state?.rate ?? 1);
+  }
+
+  /** Set playbackRate, remembering it so its ratechange isn't taken as the user's. */
+  private setRate(rate: number): void {
+    this.appliedRate = rate;
+    if (this.media.playbackRate !== rate) this.media.playbackRate = rate;
+  }
+
+  /** The video's speed changed: if the user changed it, tell the room. */
+  private onRateChange(): void {
+    this.checkHeld();
+    const room = this.state;
+    const rate = this.media.playbackRate;
+    if (!room || this.held || this.settling) return;
+    if (rate === this.appliedRate || rate === room.rate) return;
+    if (!(rate >= MIN_RATE && rate <= MAX_RATE)) return;
+    this.opts.send({ type: "rate", baseVersion: room.version, rate });
+    // Assume the room agrees, as report does for intents.
+    const now = this.opts.serverNow();
+    this.nudged = false;
+    this.appliedRate = rate;
+    this.state =
+      now > room.updatedAt
+        ? {
+            ...room,
+            rate,
+            position: expectedPosition(room, now),
+            updatedAt: now,
+          }
+        : { ...room, rate };
   }
 
   /** Re-check isHeld; when a hold ends, catch up with the room. */

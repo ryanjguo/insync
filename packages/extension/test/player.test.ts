@@ -1,4 +1,4 @@
-import type { IntentMessage, RoomState } from "@wps/protocol";
+import type { ControlMessage, RoomState } from "@wps/protocol";
 import { beforeEach, describe, expect, it } from "vitest";
 import { PlayerSync, type Media } from "../src/player";
 
@@ -9,16 +9,23 @@ import { PlayerSync, type Media } from "../src/player";
  */
 class FakeMedia implements Media {
   paused = true;
-  playbackRate = 1;
   seeking = false;
   duration = NaN;
   readyState = 4;
   blockPlay = false;
   deferEvents = false;
   private time = 0;
+  private rate = 1;
   private pending: string[] = [];
   private readonly listeners = new Map<string, Set<() => void>>();
 
+  get playbackRate(): number {
+    return this.rate;
+  }
+  set playbackRate(r: number) {
+    this.rate = r;
+    this.fire("ratechange");
+  }
   get currentTime(): number {
     return this.time;
   }
@@ -53,6 +60,9 @@ class FakeMedia implements Media {
   }
   userSeek(t: number): void {
     this.currentTime = t;
+  }
+  userRate(r: number): void {
+    this.playbackRate = r;
   }
   /** What the page does when it loads new media into the same element. */
   load(duration: number): void {
@@ -110,7 +120,7 @@ function state(overrides: Partial<RoomState> = {}): RoomState {
 
 describe("PlayerSync", () => {
   let media: FakeMedia;
-  let sent: IntentMessage[];
+  let sent: ControlMessage[];
   let now: number;
   let blocked: number;
   let ad: boolean;
@@ -337,7 +347,9 @@ describe("PlayerSync", () => {
       sync.apply(null); // rejoined
       media.currentTime = 95;
       sync.apply(state({ version: 0 }));
-      expect(sent.map((i) => i.position)).toEqual([30, 95]);
+      expect(sent.map((i) => ("position" in i ? i.position : null))).toEqual([
+        30, 95,
+      ]);
     });
   });
 
@@ -434,6 +446,71 @@ describe("PlayerSync", () => {
       sync.apply(state({ position: 5 }));
       media.load(100);
       expect(sync.stats()).toMatchObject({ mode: "settling", driftSec: null });
+    });
+  });
+
+  describe("playback speed", () => {
+    it("plays at the room's rate", () => {
+      sync.apply(
+        state({ playing: true, position: 0, updatedAt: now, rate: 1.5 }),
+      );
+      expect(media.playbackRate).toBe(1.5);
+      expect(sent).toEqual([]);
+    });
+
+    it("sends the user's speed change once", () => {
+      sync.apply(
+        state({ playing: true, position: 0, updatedAt: now, version: 3 }),
+      );
+      media.userRate(2);
+      media.dispatchFor("ratechange");
+      expect(sent).toEqual([{ type: "rate", baseVersion: 3, rate: 2 }]);
+      expect(sync.room?.rate).toBe(2);
+    });
+
+    it("does not echo drift nudges or the room's own changes, even late", () => {
+      sync.apply(state({ playing: true, position: 0, updatedAt: now }));
+      media.deferEvents = true;
+      sync.apply(
+        state({
+          playing: true,
+          position: 0,
+          updatedAt: now,
+          rate: 1.25,
+          version: 2,
+        }),
+      );
+      media.deferEvents = false;
+      // Ahead of the room: drift correction slows the video a little.
+      local = 1_000;
+      media.currentTime = 0.2;
+      media.paused = false;
+      media.tick();
+      expect(media.playbackRate).toBeCloseTo(1.25 * 0.97);
+      media.flush();
+      expect(sent).toEqual([]);
+    });
+
+    it("ignores speeds the room can't take", () => {
+      sync.apply(state({ playing: true, position: 0, updatedAt: now }));
+      media.userRate(8);
+      expect(sent).toEqual([]);
+    });
+
+    it("leaves the speed alone while an ad plays", () => {
+      sync.apply(state({ playing: true, position: 0, updatedAt: now }));
+      ad = true;
+      media.userRate(2);
+      expect(sent).toEqual([]);
+    });
+
+    it("tells a fresh room the speed it is already playing at", () => {
+      media.userRate(1.5);
+      sync.apply(state({ version: 0 }));
+      expect(sent).toEqual([
+        { type: "pause", baseVersion: 0, position: 0 },
+        { type: "rate", baseVersion: 0, rate: 1.5 },
+      ]);
     });
   });
 

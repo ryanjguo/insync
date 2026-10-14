@@ -1,8 +1,9 @@
-import type {
-  ClientMessage,
-  Member,
-  RoomState,
-  ServerMessage,
+import {
+  expectedPosition,
+  type ClientMessage,
+  type Member,
+  type RoomState,
+  type ServerMessage,
 } from "@wps/protocol";
 import type { Sim } from "./sim";
 
@@ -101,6 +102,23 @@ export class SimServer {
           this.changed(msg.type, conn.clientId);
           return;
         }
+        case "rate": {
+          if (!conn) return;
+          const s = this.state;
+          if (s.rate === msg.rate) return;
+          this.state =
+            now > s.updatedAt
+              ? {
+                  ...s,
+                  position: expectedPosition(s, now),
+                  updatedAt: now,
+                  rate: msg.rate,
+                  version: s.version + 1,
+                }
+              : { ...s, rate: msg.rate, version: s.version + 1 };
+          this.changed("rate", conn.clientId);
+          return;
+        }
         case "media":
           // Every client stays on the one video in these runs.
           return;
@@ -108,7 +126,10 @@ export class SimServer {
     };
   }
 
-  private changed(action: "play" | "pause" | "seek", by: string): void {
+  private changed(
+    action: "play" | "pause" | "seek" | "rate",
+    by: string,
+  ): void {
     this.broadcast({ type: "state", state: this.state, cause: { action, by } });
     this.onChange?.(this.state);
   }

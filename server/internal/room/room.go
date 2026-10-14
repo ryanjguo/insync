@@ -61,6 +61,8 @@ const (
 	Pause Action = "pause"
 	Seek  Action = "seek"
 	Media Action = "media"
+	// SetRate changes the playback speed.
+	SetRate Action = "rate"
 	// Buffer is the room pausing because a member is buffering, or resuming
 	// once nobody is.
 	Buffer Action = "buffering"
@@ -219,6 +221,27 @@ func (r *Room) Apply(a Action, position float64, by string, nowMs int64) State {
 	}
 	s.Version++
 	r.broadcast(StateChanged{State: r.state, Action: a, By: by}, "")
+	return r.state
+}
+
+// SetPlaybackRate changes how fast the room plays. Position is re-anchored
+// at nowMs so the expected position doesn't jump; a scheduled start that
+// hasn't happened yet keeps its time and position. Setting the rate the room
+// already has changes nothing and isn't broadcast.
+func (r *Room) SetPlaybackRate(rate float64, by string, nowMs int64) State {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s := &r.state
+	if s.Rate == rate {
+		return r.state
+	}
+	if nowMs > s.UpdatedAt {
+		s.Position = s.ExpectedPosition(nowMs)
+		s.UpdatedAt = nowMs
+	}
+	s.Rate = rate
+	s.Version++
+	r.broadcast(StateChanged{State: r.state, Action: SetRate, By: by}, "")
 	return r.state
 }
 

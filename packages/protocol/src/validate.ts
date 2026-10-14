@@ -188,6 +188,16 @@ export function parseClientMessage(raw: unknown): ParseResult<ClientMessage> {
           baseVersion: integer(o, "baseVersion", p, 0),
           position: position(o, "position", p),
         };
+      case "rate": {
+        const rate = finiteNumber(o, "rate", p);
+        if (rate < MIN_RATE || rate > MAX_RATE)
+          fail(`${p}.rate must be between ${MIN_RATE} and ${MAX_RATE}`);
+        return {
+          type: "rate",
+          baseVersion: integer(o, "baseVersion", p, 0),
+          rate,
+        };
+      }
       case "media":
         return {
           type: "media",
@@ -221,6 +231,7 @@ const CAUSES: readonly StateCause[] = [
   "play",
   "pause",
   "seek",
+  "rate",
   "media",
   "buffering",
 ];
@@ -245,7 +256,7 @@ export function parseServerMessage(raw: unknown): ParseResult<ServerMessage> {
         const action = string(cause, "action", `${p}.cause`);
         if (!CAUSES.includes(action as StateCause))
           fail(
-            `${p}.cause.action must be play, pause, seek, media or buffering`,
+            `${p}.cause.action must be play, pause, seek, rate, media or buffering`,
           );
         return {
           type: "state",

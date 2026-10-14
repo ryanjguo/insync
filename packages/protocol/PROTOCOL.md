@@ -68,6 +68,7 @@ sets it with `media`.
 | `play`      | `baseVersion`, `position`                        | Start playing from `position`.                                        |
 | `pause`     | `baseVersion`, `position`                        | Pause at `position`.                                                  |
 | `seek`      | `baseVersion`, `position`                        | Jump to `position`, keeping play/pause as is.                         |
+| `rate`      | `baseVersion`, `rate`                            | Change the playback speed (see below).                                |
 | `media`     | `baseVersion`, `mediaUrl`                        | Switch the room to another video (see below).                         |
 | `ping`      | `clientTime`, `rttMs?`                           | Clock sync probe; `clientTime` is the client's local time in ms.      |
 | `buffering` | `buffering`                                      | Whether this client's video is stalled loading (see below).           |
@@ -79,17 +80,25 @@ for scheduled starts.
 
 ## Server → client
 
-| `type`     | Fields                                                 | Meaning                                                                                                                                 |
-| ---------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `welcome`  | `clientId`, `roomId`, `serverTime`, `state`, `members` | Reply to `join`: full snapshot for a new, late or reconnecting client.                                                                  |
-| `state`    | `state`, `cause`                                       | Broadcast after every applied intent. `cause` is `{ "action": "play" \| "pause" \| "seek" \| "media" \| "buffering", "by": clientId }`. |
-| `presence` | `members`                                              | The member list changed (someone joined, left, or started or stopped buffering).                                                        |
-| `pong`     | `clientTime`, `serverTime`                             | Reply to `ping`: echoes `clientTime`; `serverTime` is server time when replying.                                                        |
-| `chat`     | `from`, `name`, `text`, `sentAt`                       | A member's chat message (see Chat below).                                                                                               |
-| `error`    | `code`, `message`                                      | `code` is one of `bad_message`, `unsupported_version`, `room_full`, `not_joined`.                                                       |
+| `type`     | Fields                                                 | Meaning                                                                                                                                           |
+| ---------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `welcome`  | `clientId`, `roomId`, `serverTime`, `state`, `members` | Reply to `join`: full snapshot for a new, late or reconnecting client.                                                                            |
+| `state`    | `state`, `cause`                                       | Broadcast after every applied intent. `cause` is `{ "action": "play" \| "pause" \| "seek" \| "rate" \| "media" \| "buffering", "by": clientId }`. |
+| `presence` | `members`                                              | The member list changed (someone joined, left, or started or stopped buffering).                                                                  |
+| `pong`     | `clientTime`, `serverTime`                             | Reply to `ping`: echoes `clientTime`; `serverTime` is server time when replying.                                                                  |
+| `chat`     | `from`, `name`, `text`, `sentAt`                       | A member's chat message (see Chat below).                                                                                                         |
+| `error`    | `code`, `message`                                      | `code` is one of `bad_message`, `unsupported_version`, `room_full`, `not_joined`.                                                                 |
 
 A member is `{ "clientId": "...", "name": "...", "buffering": true }`;
 `buffering` is left out when false.
+
+## Playback speed
+
+A `rate` sets how fast the room plays. The server re-anchors `position` and
+`updatedAt` to now (keeping the expected position where it was), sets `rate`
+and broadcasts the state with cause `rate`. During a scheduled start that
+hasn't happened yet, `position` and `updatedAt` stay as they are. Setting the
+rate the room already has changes nothing and isn't broadcast.
 
 ## Switching video
 
@@ -131,7 +140,7 @@ memory only and is lost when the server restarts.
 
 ## Not in this draft
 
-Playback-rate changes and host-only mode. They are planned as later message types.
+Host-only mode. It is planned as a later message type.
 
 A connection joins one room; a second `join` on it is a `bad_message`. Sending
 `play`, `pause` or `seek` before joining is `not_joined`. A room holds up to 16

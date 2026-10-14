@@ -1,7 +1,7 @@
 // Messages between the extension's own parts (popup, service worker, content
 // scripts). These never leave the browser; the wire protocol is @wps/protocol.
 
-import type { IntentMessage, RoomState } from "@wps/protocol";
+import type { ControlMessage, RoomState } from "@wps/protocol";
 import type { SessionSnapshot } from "./session";
 
 /** chrome.storage.local key: whether pages show the debug overlay. */
@@ -27,7 +27,7 @@ export interface RoomUpdate {
 
 /** Content script -> service worker. */
 export type PlayerEvent =
-  | { kind: "intent"; intent: IntentMessage }
+  | { kind: "intent"; intent: ControlMessage }
   | { kind: "playBlocked" }
   /** An ad started or ended. The video sits out the room until it ends. */
   | { kind: "ad"; showing: boolean }

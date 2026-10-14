@@ -34,6 +34,7 @@ const (
 	TypePause = "pause"
 	TypeSeek  = "seek"
 	TypeMedia = "media"
+	TypeRate  = "rate"
 	TypePing  = "ping"
 	// TypeBuffering is also a StateUpdate cause: the room paused for, or resumed after, buffering.
 	TypeBuffering = "buffering"
@@ -94,6 +95,12 @@ type Intent struct {
 	Position    float64 `json:"position"`
 }
 
+// Rate changes the room's playback speed.
+type Rate struct {
+	BaseVersion int64   `json:"baseVersion"`
+	Rate        float64 `json:"rate"`
+}
+
 // Media switches the room to another video, or names the first one.
 type Media struct {
 	BaseVersion int64 `json:"baseVersion"`
@@ -128,6 +135,9 @@ func (m Intent) ClientType() string { return m.Action }
 
 // ClientType implements ClientMessage.
 func (Media) ClientType() string { return TypeMedia }
+
+// ClientType implements ClientMessage.
+func (Rate) ClientType() string { return TypeRate }
 
 // ClientType implements ClientMessage.
 func (Ping) ClientType() string { return TypePing }
@@ -239,6 +249,12 @@ func (m Join) MarshalJSON() ([]byte, error) {
 func (m Intent) MarshalJSON() ([]byte, error) {
 	type wire Intent
 	return marshalTyped(m.Action, wire(m))
+}
+
+// MarshalJSON adds the "type" field.
+func (m Rate) MarshalJSON() ([]byte, error) {
+	type wire Rate
+	return marshalTyped(TypeRate, wire(m))
 }
 
 // MarshalJSON adds the "type" field.

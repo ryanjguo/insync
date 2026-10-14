@@ -65,6 +65,14 @@ export interface SeekMessage {
   position: number;
 }
 
+/** Change how fast the room plays. */
+export interface RateMessage {
+  type: "rate";
+  baseVersion: number;
+  /** Playback rate, in [MIN_RATE, MAX_RATE]. */
+  rate: number;
+}
+
 /** Switch the room to another video (or name the first one). */
 export interface MediaMessage {
   type: "media";
@@ -98,9 +106,12 @@ export interface ChatMessage {
 }
 
 export type IntentMessage = PlayMessage | PauseMessage | SeekMessage;
+/** Anything a player sends to steer the room: an intent or a speed change. */
+export type ControlMessage = IntentMessage | RateMessage;
 export type ClientMessage =
   | JoinMessage
   | IntentMessage
+  | RateMessage
   | MediaMessage
   | PingMessage
   | BufferingMessage
@@ -121,11 +132,14 @@ export interface WelcomeMessage {
 export type IntentAction = IntentMessage["type"];
 
 /**
- * What changed the room: a play, pause or seek, a switch of video, or the room
- * pausing for (or resuming after) someone buffering.
+ * What changed the room: a play, pause or seek, a speed change, a switch of
+ * video, or the room pausing for (or resuming after) someone buffering.
  */
 export type StateCause =
-  IntentAction | MediaMessage["type"] | BufferingMessage["type"];
+  | IntentAction
+  | RateMessage["type"]
+  | MediaMessage["type"]
+  | BufferingMessage["type"];
 
 export interface StateMessage {
   type: "state";

@@ -443,3 +443,57 @@ func TestChatHistory(t *testing.T) {
 		t.Fatalf("got %d lines from %d to %d, want the last %d", len(lines), lines[0].SentAt, lines[len(lines)-1].SentAt, ChatHistory)
 	}
 }
+
+func TestSetPlaybackRate(t *testing.T) {
+	tests := []struct {
+		name  string
+		start State
+		rate  float64
+		want  State
+	}{
+		{
+			"playing re-anchors where the room is now",
+			State{Playing: true, Position: 10, UpdatedAt: 1000, Rate: 1, Version: 3},
+			2,
+			State{Playing: true, Position: 18, UpdatedAt: 9000, Rate: 2, Version: 4},
+		},
+		{
+			"paused keeps the position",
+			State{Position: 10, UpdatedAt: 1000, Rate: 1, Version: 3},
+			0.5,
+			State{Position: 10, UpdatedAt: 9000, Rate: 0.5, Version: 4},
+		},
+		{
+			"a scheduled start keeps its time",
+			State{Playing: true, Position: 10, UpdatedAt: 9200, Rate: 1, Version: 3},
+			1.5,
+			State{Playing: true, Position: 10, UpdatedAt: 9200, Rate: 1.5, Version: 4},
+		},
+		{
+			"the same rate changes nothing",
+			State{Playing: true, Position: 10, UpdatedAt: 1000, Rate: 1.25, Version: 3},
+			1.25,
+			State{Playing: true, Position: 10, UpdatedAt: 1000, Rate: 1.25, Version: 3},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := New("room")
+			p := &recorder{}
+			_ = r.Join("alice", "Alice", p, 0)
+			r.state = tt.start
+			p.events = nil
+			if got := r.SetPlaybackRate(tt.rate, "alice", 9000); got != tt.want {
+				t.Errorf("SetPlaybackRate returned %+v, want %+v", got, tt.want)
+			}
+			changed := tt.start != tt.want
+			if sent := len(p.events) > 0; sent != changed {
+				t.Errorf("broadcast = %v, want %v", sent, changed)
+			} else if changed {
+				if sc := lastState(t, p); sc.Action != SetRate || sc.By != "alice" {
+					t.Errorf("broadcast %+v, want a rate change by alice", sc)
+				}
+			}
+		})
+	}
+}
