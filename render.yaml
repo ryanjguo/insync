@@ -1,0 +1,12 @@
+# Render blueprint for the sync server; see "Deploying the server" in the README.
+# Rooms live in memory, so keep it to one instance.
+services:
+  - type: web
+    name: insync-server
+    runtime: docker
+    rootDir: server
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    plan: starter
+    numInstances: 1

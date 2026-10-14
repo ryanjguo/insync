@@ -102,6 +102,33 @@ as the same person; anything you play, pause or seek meanwhile is sent once
 it's back. The server drops connections that have been silent for a minute, so
 someone whose laptop went to sleep leaves the member list.
 
+## Deploying the server
+
+The server is one small Go binary with no database, so any host that runs a
+Docker image works. Rooms live in memory: run a single instance, and expect
+rooms (and chat) to reset when it restarts.
+
+- `server/Dockerfile` builds a ~15 MB image. It listens on `$PORT` (8080 by
+  default), answers health checks at `/healthz`, and shuts down cleanly on
+  `SIGTERM`.
+- **Fly.io:** `server/fly.toml` is ready. From `server/`, run
+  `fly launch --copy-config --no-deploy` once (pick a unique app name), then
+  `fly deploy`. The server is then at `wss://<app>.fly.dev/ws`.
+- **Render:** `render.yaml` is a blueprint for the same image. Create a
+  Blueprint from the repo; the server is then at
+  `wss://<service>.onrender.com/ws`. Render's free plan sleeps after 15 idle
+  minutes, which drops everyone's connection, so the blueprint uses a paid plan.
+
+The host terminates TLS, so the extension connects with `wss://`. Build the
+extension for the deployed server so nobody has to type its address:
+
+```sh
+INSYNC_SERVER=wss://<app>.fly.dev/ws npm run build
+```
+
+Invite links then leave the server out, since everyone's extension already
+points at it.
+
 ## Lint and test
 
 ```sh

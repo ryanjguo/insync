@@ -2,8 +2,14 @@
 // it isn't the default) in the #fragment. Opening one with the extension
 // installed joins that tab to the room. The fragment never reaches the site.
 
+/** Replaced at build time with $INSYNC_SERVER (see build.mjs); absent in tests. */
+declare const __INSYNC_SERVER__: string | undefined;
+
 /** The server the extension connects to unless told otherwise. */
-export const DEFAULT_SERVER = "ws://localhost:8080/ws";
+export const DEFAULT_SERVER =
+  typeof __INSYNC_SERVER__ === "string"
+    ? __INSYNC_SERVER__
+    : "ws://localhost:8080/ws";
 
 const ROOM_PARAM = "insync";
 const SERVER_PARAM = "insync-server";
