@@ -140,6 +140,16 @@ npm run typecheck && npm run lint && npm test
 npm run format     # apply Prettier
 ```
 
+### End-to-end smoke test
+
+`npm run e2e` builds the extension and the Go server, starts the server on a
+page with a `<video>`, and opens two tabs of a real Chromium with the
+extension loaded. Both join one room through an invite link, and the test
+checks that play, pause, seek and speed changes in one tab show up in the
+other. It needs Go and a Playwright Chromium: run
+`npx playwright install chromium` once, or point `CHROMIUM_PATH` at a
+Chromium you already have.
+
 ## How sync works
 
 - **Room state.** The server stores playing/paused, position `P` at server time

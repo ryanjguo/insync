@@ -11,7 +11,8 @@
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "test": "vitest run",
-    "harness": "npm run start -w @wps/harness"
+    "harness": "npm run start -w @wps/harness",
+    "e2e": "npm run build && npm test -w @wps/e2e"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
