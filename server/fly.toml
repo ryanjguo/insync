@@ -1,0 +1,24 @@
+# Fly.io config for the sync server. Deploy from this directory with
+# `fly deploy`; see "Deploying the server" in the README.
+# Rooms live in memory, so run exactly one machine and keep it running.
+
+app = "insync-server"
+primary_region = "iad"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "5s"
+    interval = "30s"
+    method = "GET"
+    path = "/healthz"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
