@@ -7,7 +7,7 @@ measured sync quality: drift numbers under simulated bad networks, not just
 "it works."
 
 > Status: first demo. Tabs in the same room mirror each other's play, pause,
-> seek and choice of video through the server, and each tab keeps steering its
+> seek, speed and choice of video through the server, and each tab keeps steering its
 > video back toward the room while it plays. The harness measures drift over
 > simulated bad networks: see [sync drift results](packages/harness/RESULTS.md).
 
@@ -57,7 +57,7 @@ npm run harness    # simulated drift report (see packages/harness/RESULTS.md)
 4. Open http://localhost:8080 in two tabs. In each one, click the extension's
    icon and join the same room code (the server field defaults to
    `ws://localhost:8080/ws`).
-5. Play, pause or seek in either tab; the other follows.
+5. Play, pause, seek or change the speed in either tab; the other follows.
 
 If a tab says Chrome blocked playback, click play once in that tab: Chrome only
 lets a page start sound after you've interacted with it.

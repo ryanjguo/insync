@@ -14,7 +14,7 @@ viewer every 100 ms while the room is playing.
 
 | Scenario      | Drift p50 | Drift p95 | Drift max | p95 incl. catch-up | Time within 100 ms | Converge after seek (median / max)     |
 | ------------- | --------- | --------- | --------- | ------------------ | ------------------ | -------------------------------------- |
-| Baseline      | 15 ms     | 46 ms     | 71 ms     | 46 ms              | 99.9%              | 0.2 s / 0.2 s                          |
+| Baseline      | 15 ms     | 46 ms     | 71 ms     | 47 ms              | 99.9%              | 0.2 s / 0.2 s                          |
 | Cross-country | 9 ms      | 35 ms     | 98 ms     | 36 ms              | 99.7%              | 0.6 s / 0.6 s                          |
 | Bad Wi-Fi     | 14 ms     | 44 ms     | 100 ms    | 45 ms              | 99.2%              | 1.3 s / 2.6 s                          |
 | Lag spike     | 12 ms     | 45 ms     | 100 ms    | 46 ms              | 99.7%              | 0.3 s / 0.4 s                          |

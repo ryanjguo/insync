@@ -40,6 +40,12 @@ func DecodeClientMessage(data []byte) (ClientMessage, error) {
 		msg = m
 	case TypePlay, TypePause, TypeSeek:
 		msg = Intent{Action: typ, BaseVersion: r.int("baseVersion", 0), Position: r.position("position")}
+	case TypeRate:
+		m := Rate{BaseVersion: r.int("baseVersion", 0), Rate: r.float("rate")}
+		if r.err == nil && (m.Rate < MinRate || m.Rate > MaxRate) {
+			r.fail("rate", "must be between %g and %g", MinRate, MaxRate)
+		}
+		msg = m
 	case TypeMedia:
 		msg = Media{BaseVersion: r.int("baseVersion", 0), MediaURL: r.mediaURL("mediaUrl")}
 	case TypePing:
@@ -83,9 +89,9 @@ func DecodeServerMessage(data []byte) (ServerMessage, error) {
 		if cause != nil {
 			m.Cause = Cause{Action: cause.str("action"), By: cause.id("by")}
 			switch m.Cause.Action {
-			case TypePlay, TypePause, TypeSeek, TypeMedia, TypeBuffering:
+			case TypePlay, TypePause, TypeSeek, TypeRate, TypeMedia, TypeBuffering:
 			default:
-				cause.fail("action", "must be play, pause, seek, media or buffering")
+				cause.fail("action", "must be play, pause, seek, rate, media or buffering")
 			}
 			r.sub(cause)
 		}

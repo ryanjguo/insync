@@ -3,7 +3,9 @@ import {
   parseServerMessage,
   type ChatLineMessage,
   type ClientMessage,
+  type ControlMessage,
   type IntentMessage,
+  type RateMessage,
   type MediaMessage,
   type Member,
   type RoomState,
@@ -88,7 +90,7 @@ const SILENCE_MS = 45_000;
  * from pings.
  *
  * If the connection drops after joining, it reconnects with growing delays
- * and rejoins as the same member. A play, pause, seek or video switch made
+ * and rejoins as the same member. A play, pause, seek, speed change or video switch made
  * while disconnected is sent right after rejoining (the latest of each).
  */
 export class RoomSession {
@@ -107,7 +109,11 @@ export class RoomSession {
   /** Whether this tab's video is stalled loading, as last told by setBuffering. */
   private buffering = false;
   /** Sent after rejoining: what the user did while disconnected. */
-  private queued: { intent?: IntentMessage; media?: MediaMessage } = {};
+  private queued: {
+    intent?: IntentMessage;
+    rate?: RateMessage;
+    media?: MediaMessage;
+  } = {};
 
   constructor(private readonly opts: SessionOptions) {
     this.now = opts.now ?? Date.now;
@@ -141,10 +147,11 @@ export class RoomSession {
       // A rejoining member keeps its old flag on the server, which may be stale.
       if (this.buffering || this.snap.clientId)
         this.send({ type: "buffering", buffering: this.buffering });
-      const { intent, media } = this.queued;
+      const { intent, rate, media } = this.queued;
       this.queued = {};
       if (media) this.send(media);
       if (intent) this.send(intent);
+      if (rate) this.send(rate);
       this.ping();
     };
     socket.onmessage = (e) => {
@@ -190,9 +197,11 @@ export class RoomSession {
     return this.now() + this.snap.offsetMs;
   }
 
-  sendIntent(intent: IntentMessage): void {
+  sendIntent(intent: ControlMessage): void {
     if (this.snap.status === "joined") this.send(intent);
-    else if (this.snap.status === "reconnecting") this.queued.intent = intent;
+    else if (this.snap.status !== "reconnecting") return;
+    else if (intent.type === "rate") this.queued.rate = intent;
+    else this.queued.intent = intent;
   }
 
   /** Tell the room this tab is on another video (`url` is its mediaKey). */

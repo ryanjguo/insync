@@ -56,6 +56,7 @@ func TestRoundTrip(t *testing.T) {
 		Intent{Action: TypePause, BaseVersion: 0, Position: 0},
 		Intent{Action: TypeSeek, BaseVersion: 9, Position: 3600},
 		Media{BaseVersion: 2, MediaURL: "https://www.youtube.com/watch?v=abc"},
+		Rate{BaseVersion: 4, Rate: 1.5},
 		Ping{ClientTime: 123.456},
 		Ping{ClientTime: 123.456, RTTMs: 42.5},
 		Buffering{Buffering: true},
@@ -142,7 +143,7 @@ func TestDecodeDetails(t *testing.T) {
 		{name: "missing field", in: `{"type":"seek","baseVersion":0}`, wantErr: "message.position is required"},
 		{name: "unknown type", in: `{"type":"rewind"}`, wantErr: `unknown client message type "rewind"`},
 		{name: "nested path", server: true, in: `{"type":"presence","members":[{"clientId":"abcd","name":""}]}`, wantErr: "message.members[0].name must be 1-32 characters"},
-		{name: "cause path", server: true, in: `{"type":"state","state":{"mediaUrl":"","playing":false,"position":0,"updatedAt":0,"rate":1,"version":1},"cause":{"action":"rewind","by":"abcd"}}`, wantErr: "message.cause.action must be play, pause, seek, media or buffering"},
+		{name: "cause path", server: true, in: `{"type":"state","state":{"mediaUrl":"","playing":false,"position":0,"updatedAt":0,"rate":1,"version":1},"cause":{"action":"rewind","by":"abcd"}}`, wantErr: "message.cause.action must be play, pause, seek, rate, media or buffering"},
 		{name: "media URL scheme", in: `{"type":"media","baseVersion":0,"mediaUrl":"file:///etc/passwd"}`, wantErr: "message.mediaUrl must be an http(s) URL"},
 		{name: "state path", server: true, in: `{"type":"state","state":{"mediaUrl":"","playing":false,"position":0,"updatedAt":0,"rate":9,"version":1},"cause":{"action":"play","by":"abcd"}}`, wantErr: "message.state.rate must be between 0.25 and 4"},
 	}

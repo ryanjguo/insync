@@ -312,6 +312,7 @@ describe("RoomSession", () => {
     it("sends what the user did while disconnected right after rejoining", () => {
       joinAndDrop();
       session.sendIntent({ type: "pause", baseVersion: 0, position: 3 });
+      session.sendIntent({ type: "rate", baseVersion: 0, rate: 1.5 });
       session.sendIntent({ type: "seek", baseVersion: 0, position: 9 });
       session.sendMedia("https://x.test/b");
       timers.shift()!.fn();
@@ -321,6 +322,7 @@ describe("RoomSession", () => {
         "buffering",
         "media",
         "seek",
+        "rate",
         "ping",
       ]);
     });
