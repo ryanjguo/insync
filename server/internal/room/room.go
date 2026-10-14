@@ -4,6 +4,7 @@ package room
 
 import (
 	"errors"
+	"math"
 	"slices"
 	"sort"
 	"sync"
@@ -14,6 +15,19 @@ const MaxMembers = 16
 
 // ChatHistory is how many recent chat lines a room keeps for people who join later.
 const ChatHistory = 50
+
+// Scheduled starts: a play, a seek while playing, or a resume after buffering
+// starts at server time now + lead rather than now, so the new state reaches
+// every member before it takes effect and they all start together. The lead
+// is the slowest member's round trip plus LeadMargin, kept within
+// [MinLeadMs, MaxLeadMs]. A member that hasn't reported a round trip yet
+// counts as DefaultRTTMs.
+const (
+	LeadMargin   = 50
+	MinLeadMs    = 100
+	MaxLeadMs    = 1000
+	DefaultRTTMs = 200
+)
 
 // ErrFull is returned by Join when the room already has MaxMembers members.
 var ErrFull = errors.New("room is full")
@@ -112,6 +126,7 @@ type member struct {
 	peer      Peer
 	joined    uint64 // join order, for a stable member list
 	buffering bool
+	rttMs     float64 // round trip to the member's client; 0 until reported
 }
 
 // Room is a single room. It is safe for concurrent use.
@@ -153,6 +168,7 @@ func (r *Room) Join(clientID, name string, p Peer, nowMs int64) error {
 	if old, rejoin := r.members[clientID]; rejoin {
 		// Still buffering until the member says otherwise: it reports again on rejoining.
 		m.buffering = old.buffering
+		m.rttMs = old.rttMs
 	}
 	r.members[clientID] = m
 	members := r.memberList()
@@ -198,6 +214,9 @@ func (r *Room) Apply(a Action, position float64, by string, nowMs int64) State {
 	}
 	s.Position = position
 	s.UpdatedAt = nowMs
+	if s.Playing {
+		s.UpdatedAt += r.lead()
+	}
 	s.Version++
 	r.broadcast(StateChanged{State: r.state, Action: a, By: by}, "")
 	return r.state
@@ -227,7 +246,8 @@ func (r *Room) SetMedia(url, by string, nowMs int64) State {
 
 // SetBuffering records whether a member's video is stalled loading. When
 // someone starts buffering while the room plays, the room pauses for everyone
-// where it is; once nobody is buffering, it plays again from there.
+// where it is; once nobody is buffering, it plays again from there, on a
+// scheduled start.
 func (r *Room) SetBuffering(clientID string, buffering bool, nowMs int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -267,9 +287,37 @@ func (r *Room) resumeIfReady(by string, nowMs int64) {
 	r.waiting = false
 	s := &r.state
 	s.Playing = true
-	s.UpdatedAt = nowMs
+	s.UpdatedAt = nowMs + r.lead()
 	s.Version++
 	r.broadcast(StateChanged{State: r.state, Action: Buffer, By: by}, "")
+}
+
+// SetRTT records a member's round trip to the server, in ms, for scheduling starts.
+func (r *Room) SetRTT(clientID string, rttMs float64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if m, ok := r.members[clientID]; ok {
+		m.rttMs = rttMs
+	}
+}
+
+// Lead returns how far ahead the room schedules starts now, in ms.
+func (r *Room) Lead() int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.lead()
+}
+
+func (r *Room) lead() int64 {
+	var slowest float64
+	for _, m := range r.members {
+		rtt := m.rttMs
+		if rtt == 0 {
+			rtt = DefaultRTTMs
+		}
+		slowest = max(slowest, rtt)
+	}
+	return min(max(int64(math.Ceil(slowest))+LeadMargin, MinLeadMs), MaxLeadMs)
 }
 
 // Chat sends a member's message to everyone in the room, the sender included,

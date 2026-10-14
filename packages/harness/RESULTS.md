@@ -12,13 +12,13 @@ viewer every 100 ms while the room is playing.
 
 <!-- results:start -->
 
-| Scenario      | Drift p50 | Drift p95 | Drift max | p95 incl. catch-up | Time within 100 ms | Converge after seek (median / max)      |
-| ------------- | --------- | --------- | --------- | ------------------ | ------------------ | --------------------------------------- |
-| Baseline      | 36 ms     | 49 ms     | 100 ms    | 50 ms              | 99.4%              | 1.5 s / 2.3 s                           |
-| Cross-country | 40 ms     | 51 ms     | 100 ms    | 53 ms              | 99.1%              | 1.4 s / 2.5 s                           |
-| Bad Wi-Fi     | 37 ms     | 64 ms     | 100 ms    | 70 ms              | 97.4%              | 4.4 s / 6.6 s                           |
-| Lag spike     | 39 ms     | 50 ms     | 100 ms    | 50 ms              | 99.1%              | 1.6 s / 2.3 s                           |
-| Mixed room    | 45 ms     | 81 ms     | 127 ms    | 180 ms             | 84.0%              | 2.2 s / 3.9 s (92 of 595 never settled) |
+| Scenario      | Drift p50 | Drift p95 | Drift max | p95 incl. catch-up | Time within 100 ms | Converge after seek (median / max)     |
+| ------------- | --------- | --------- | --------- | ------------------ | ------------------ | -------------------------------------- |
+| Baseline      | 15 ms     | 46 ms     | 71 ms     | 46 ms              | 99.9%              | 0.2 s / 0.2 s                          |
+| Cross-country | 9 ms      | 35 ms     | 98 ms     | 36 ms              | 99.7%              | 0.6 s / 0.6 s                          |
+| Bad Wi-Fi     | 14 ms     | 44 ms     | 100 ms    | 45 ms              | 99.2%              | 1.3 s / 2.6 s                          |
+| Lag spike     | 12 ms     | 45 ms     | 100 ms    | 46 ms              | 99.7%              | 0.3 s / 0.4 s                          |
+| Mixed room    | 6 ms      | 17 ms     | 100 ms    | 289 ms             | 93.6%              | 1.1 s / 3.9 s (6 of 595 never settled) |
 
 Lag spike, back in sync after the stall ended: 1.2 s, 0.3 s, 0.3 s, 1.7 s, 0.3 s.
 
@@ -35,35 +35,38 @@ Lag spike, back in sync after the stall ended: 1.2 s, 0.3 s, 0.3 s, 1.7 s, 0.3 s
 ## Against the target
 
 The plan's target is under 100 ms drift at p95 on normal networks for 2–8
-viewers. Baseline and Cross-country meet it with room to spare (about 50 ms),
-and so does Bad Wi-Fi (64 ms settled, 70 ms counting catch-up).
+viewers. Every scenario meets it once settled (17–46 ms), and all but the
+Mixed room meet it counting catch-up too (under 50 ms).
 
-The Mixed room misses it once catch-up is counted: with a seek every 5 s and
-viewers up to 300 ms away, 92 of 595 seeks never settled before the next one,
-p95 over all time is 180 ms, and the room is within 100 ms only 84% of the
-time. Between disruptions it holds 81 ms at p95.
+The Mixed room still misses it counting catch-up: p95 over all time is
+289 ms. With a seek every 5 s and viewers up to 300 ms away, about 6% of all
+samples fall in the moment right after a seek when the farthest viewers
+haven't heard about it yet, and p95 lands among those. The room is within
+100 ms 93.6% of the time (84% before scheduled starts), and 6 of 595 seeks
+never settled before the next one (92 before).
 
 ## Why the numbers look like this
 
-- **Settled drift sits just under 50 ms.** The drift controller leaves
-  anything under 50 ms alone (its deadband), so videos settle anywhere in that
-  band. Shrinking the deadband would lower p50 and p95 directly.
-- **Catching up is slow: 3% faster or slower is 30 ms per second.** A viewer
-  250 ms off takes about 7 s to get back inside 50 ms by rate nudges alone,
-  since only drift over 1 s is fixed by seeking.
-- **The seeker ends up ahead by their own one-way latency.** The server
-  stamps a seek with the time it arrives, but the seeker's video jumped when
-  they clicked. At 250 ms latency they start 250 ms ahead of everyone else.
-- **Joining a play leaves viewers behind by their latency.** When play
-  arrives, a paused video less than 250 ms from the room's position isn't
-  moved (the player's apply tolerance), so it starts that far behind.
-- **Seeks take time to land.** Playback holds for 30–150 ms while a seek
-  loads, so every seek starts a little behind.
+- **Plays and seeks start together.** The server schedules a play, or a
+  seek while playing, a little more than the slowest viewer's round trip
+  ahead. Every video waits at the start position and starts at that moment,
+  so nobody starts late by their latency. Whoever pressed play or seeked is
+  already a bit past the start; their video pauses until the room catches up
+  rather than jumping back.
+- **Settled drift stays inside the deadband.** The drift controller leaves
+  anything under 50 ms alone, so videos that start together (p50 6–15 ms)
+  only get nudged once the ±0.1% speed error has carried them to its edge,
+  which is where p95 sits.
+- **Catching up is still slow: 3% faster or slower is 30 ms per second.** A
+  viewer whose message arrives after the scheduled start (a resent packet on
+  Bad Wi-Fi) seeks to where the room is and has to nudge the rest of the way.
+- **Seeks take time to land.** A seek that loads for 30–150 ms is covered by
+  the wait when the lead is long enough; on a fast network the lead is only
+  100 ms, so a slow seek can still start a little behind.
 
-Scheduled starts (play at server time T + lead, from the plan) and stamping
-intents with the sender's server time would remove the two latency effects;
-a lower apply tolerance and a larger nudge for large drift would shorten
-catch-up. None of these are tuned here: the numbers are the code as it is.
+A lower apply tolerance and a larger nudge for large drift would shorten
+catch-up further. None of these are tuned here: the numbers are the code as
+it is.
 
 ## How it works
 
@@ -86,7 +89,8 @@ same numbers.
   holds up everything behind it, rather than losing the message.
 - **The server** is a TypeScript copy of the Go server's room logic: pongs
   stamped with server time, intents applied in arrival order at the server's
-  time, every change broadcast. Drift is measured against its clock.
+  time, plays and seeks while playing scheduled a lead ahead, every change
+  broadcast. Drift is measured against its clock.
 
 | Scenario      | Viewers | Latency (each way) | Jitter | Packet loss | Events                                                   |
 | ------------- | ------- | ------------------ | ------ | ----------- | -------------------------------------------------------- |

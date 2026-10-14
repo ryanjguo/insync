@@ -297,6 +297,46 @@
     }
   },
   {
+    "name": "ping with rttMs",
+    "direction": "client",
+    "valid": true,
+    "message": {
+      "type": "ping",
+      "clientTime": 123456.789,
+      "rttMs": 42.5
+    }
+  },
+  {
+    "name": "ping negative rttMs",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "ping",
+      "clientTime": 1,
+      "rttMs": -1
+    }
+  },
+  {
+    "name": "ping rttMs too large",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "ping",
+      "clientTime": 1,
+      "rttMs": 60001
+    }
+  },
+  {
+    "name": "ping rttMs not a number",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "ping",
+      "clientTime": 1,
+      "rttMs": "fast"
+    }
+  },
+  {
     "name": "buffering",
     "direction": "client",
     "valid": true,

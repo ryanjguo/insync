@@ -111,6 +111,11 @@ npm run format     # apply Prettier
   `P + (t − T0) × rate` while playing.
 - **Clock sync.** Clients ping the server, keep the lowest-RTT samples and
   estimate their offset NTP-style (`sync-core/src/clock.ts`).
+- **Scheduled starts.** A play, or a seek while playing, starts at server
+  time `T + lead`, a little more than the slowest member's round trip ahead,
+  so every video starts at the same moment instead of whenever the message
+  arrives. Whoever pressed play waits for the room to reach their video
+  rather than jumping back (`server/internal/room`, `extension/src/player.ts`).
 - **Drift correction.** While a video plays, the extension compares it with the
   room's expected position twice a second. Under ~50 ms off it does nothing, up
   to ~1 s it nudges `playbackRate` by 3% until it's back in line, beyond that it

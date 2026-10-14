@@ -13,6 +13,7 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/ryanjguo/insync/server/internal/protocol"
+	"github.com/ryanjguo/insync/server/internal/room"
 )
 
 func newTestServer(t *testing.T) *httptest.Server {
@@ -97,7 +98,22 @@ func TestWebSocket(t *testing.T) {
 			func(m protocol.ServerMessage) bool {
 				u, ok := m.(protocol.StateUpdate)
 				return ok && u.Cause.Action == protocol.TypePlay && u.State.Playing &&
-					u.State.Position == 1 && u.State.UpdatedAt == 5000 && u.State.Version == 1
+					u.State.Position == 1 && u.State.UpdatedAt == 5000+room.DefaultRTTMs+room.LeadMargin && u.State.Version == 1
+			},
+		},
+		{
+			"a ping after joining still gets a pong and records the round trip",
+			`{"type":"ping","clientTime":1,"rttMs":400}`,
+			func(m protocol.ServerMessage) bool {
+				return m == protocol.Pong{ClientTime: 1, ServerTime: 5000}
+			},
+		},
+		{
+			"a play is scheduled a little more than the slowest round trip ahead",
+			`{"type":"play","baseVersion":1,"position":2}`,
+			func(m protocol.ServerMessage) bool {
+				u, ok := m.(protocol.StateUpdate)
+				return ok && u.State.Position == 2 && u.State.UpdatedAt == 5000+400+room.LeadMargin
 			},
 		},
 	}

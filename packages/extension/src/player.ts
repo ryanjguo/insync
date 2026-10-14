@@ -66,9 +66,10 @@ export interface PlayerSyncOptions {
 export interface SyncStats {
   /**
    * "idle": not in a room. "held": an ad is showing. "settling": new media
-   * just loaded. "following": tracking the room.
+   * just loaded. "starting": waiting for a scheduled start. "following":
+   * tracking the room.
    */
-  mode: "idle" | "held" | "settling" | "following";
+  mode: "idle" | "held" | "settling" | "starting" | "following";
   /** Seconds ahead (positive) or behind (negative) of the room. Null unless following. */
   driftSec: number | null;
   /** The video's current playbackRate. */
@@ -102,6 +103,12 @@ const HAVE_FUTURE_DATA = 3;
 /** Events that may mean a stalled video can play again. */
 const READY_EVENTS = ["canplay", "playing", "progress"];
 
+/**
+ * A video at most this far ahead of a scheduled start waits for the room to
+ * catch up rather than seeking back. Seconds.
+ */
+const MAX_WAIT_AHEAD_SEC = 1;
+
 /** Never seek closer to the end than this, so a shorter video doesn't just end. Seconds. */
 const END_MARGIN_SEC = 1;
 
@@ -125,6 +132,13 @@ const END_MARGIN_SEC = 1;
  * where the room says it should be. Small drift is fixed by nudging
  * playbackRate a few percent, large drift by seeking (sync-core's `correct`).
  * Rate nudges are undone as soon as the video is back in line or stops.
+ *
+ * Scheduled starts: a play (or a seek while playing) arrives as "playing from
+ * P at server time T", with T a little in the future so every video gets the
+ * message before it starts. The video is paused at P and started at T. Whoever
+ * pressed play is usually a little past P already: rather than jump back, the
+ * video waits until the room reaches it. A pause the video gets while waiting
+ * is taken as our own, not as the user's.
  *
  * Buffering: when the video stalls for data for more than `stallMs` while
  * following the room, `onBuffering(true)` lets the room pause for it;
@@ -151,6 +165,10 @@ export class PlayerSync {
   private stalled = false;
   /** Bumped on each stall and recovery, so a stale stall timer does nothing. */
   private stalls = 0;
+  /** Server time the video starts at, while it waits for a scheduled start. */
+  private startAt: number | null = null;
+  /** Bumped whenever a scheduled start is set or dropped, so a stale start timer does nothing. */
+  private starts = 0;
 
   constructor(
     private readonly media: Media,
@@ -208,7 +226,9 @@ export class PlayerSync {
         ? "held"
         : this.settling
           ? "settling"
-          : "following";
+          : this.startAt !== null
+            ? "starting"
+            : "following";
     return {
       mode,
       driftSec:
@@ -225,6 +245,7 @@ export class PlayerSync {
   apply(state: RoomState | null): void {
     if (state && this.state && state.version < this.state.version) return;
     this.state = state;
+    this.cancelStart();
     if (!state) this.setStalled(false);
     if (!state || !state.playing) this.unnudge();
     if (!state || state.version > 0) this.seeded = false;
@@ -240,12 +261,55 @@ export class PlayerSync {
       }
       return;
     }
+    if (state.playing && this.opts.serverNow() < state.updatedAt) {
+      this.awaitStart(state);
+      return;
+    }
     this.seekToRoom(state);
     if (state.playing && this.media.paused) {
       this.media.play().catch(() => this.opts.onPlayBlocked?.());
     } else if (!state.playing && !this.media.paused) {
       this.media.pause();
     }
+  }
+
+  /**
+   * Hold the video for a scheduled start, then play it when the room reaches
+   * where it is.
+   */
+  private awaitStart(state: RoomState): void {
+    const media = this.media;
+    const from = this.target(state);
+    const ahead = media.currentTime - from;
+    const deadband = (this.opts.drift ?? defaultDriftConfig).deadbandSec;
+    let startAt = state.updatedAt;
+    if (ahead >= 0 && ahead <= MAX_WAIT_AHEAD_SEC) {
+      startAt += (ahead / state.rate) * 1000;
+    } else if (ahead < -deadband || ahead > MAX_WAIT_AHEAD_SEC) {
+      media.currentTime = from;
+    }
+    const start = ++this.starts;
+    this.startAt = startAt;
+    if (!media.paused) media.pause();
+
+    const setTimer = this.opts.setTimer ?? setTimeout;
+    const wait = (): void => {
+      if (start !== this.starts || this.disposed) return;
+      const left = startAt - this.opts.serverNow();
+      if (left > 0) {
+        setTimer(wait, left);
+        return;
+      }
+      this.startAt = null;
+      media.play().catch(() => this.opts.onPlayBlocked?.());
+    };
+    setTimer(wait, startAt - this.opts.serverNow());
+  }
+
+  /** Drop a scheduled start that hasn't happened yet. */
+  private cancelStart(): void {
+    this.starts++;
+    this.startAt = null;
   }
 
   /** Where the video should be now, kept short of the end of the video. */
@@ -366,6 +430,12 @@ export class PlayerSync {
     if (!room || this.held || this.settling) return;
     const position = this.media.currentTime;
     const now = this.opts.serverNow();
+    if (this.startAt !== null && room.playing) {
+      // Waiting for a scheduled start: our own pause, or the user trying to
+      // play early. Keep holding; a seek is still the user's.
+      if (action === "play") this.awaitStart(room);
+      if (action !== "seek") return;
+    }
     switch (action) {
       case "play":
         if (room.playing) {
@@ -391,6 +461,7 @@ export class PlayerSync {
   /** Tell the room what this video just did. */
   private report(action: IntentAction, room: RoomState): void {
     const position = this.media.currentTime;
+    this.cancelStart();
     this.opts.send({ type: action, baseVersion: room.version, position });
     // Assume the room will agree, so the next local event is judged against
     // what the user just did, not the state from before it. The server's reply

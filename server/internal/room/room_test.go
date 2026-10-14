@@ -58,10 +58,10 @@ func TestApply(t *testing.T) {
 		want   State
 	}{
 		{
-			"play starts from the given position",
+			"play starts from the given position after the lead",
 			State{Rate: 1},
 			Play, 12.5,
-			State{Playing: true, Position: 12.5, UpdatedAt: 9000, Rate: 1, Version: 1},
+			State{Playing: true, Position: 12.5, UpdatedAt: 9000 + MinLeadMs, Rate: 1, Version: 1},
 		},
 		{
 			"pause stops at the given position",
@@ -70,10 +70,10 @@ func TestApply(t *testing.T) {
 			State{Playing: false, Position: 11, UpdatedAt: 9000, Rate: 1, Version: 5},
 		},
 		{
-			"seek while playing keeps playing",
+			"seek while playing keeps playing after the lead",
 			State{Playing: true, Position: 3, UpdatedAt: 1000, Rate: 1, Version: 2},
 			Seek, 60,
-			State{Playing: true, Position: 60, UpdatedAt: 9000, Rate: 1, Version: 3},
+			State{Playing: true, Position: 60, UpdatedAt: 9000 + MinLeadMs, Rate: 1, Version: 3},
 		},
 		{
 			"seek while paused stays paused",
@@ -85,13 +85,13 @@ func TestApply(t *testing.T) {
 			"play while playing still bumps the version",
 			State{Playing: true, Position: 3, UpdatedAt: 1000, Rate: 1, Version: 7},
 			Play, 10,
-			State{Playing: true, Position: 10, UpdatedAt: 9000, Rate: 1, Version: 8},
+			State{Playing: true, Position: 10, UpdatedAt: 9000 + MinLeadMs, Rate: 1, Version: 8},
 		},
 		{
 			"rate and media URL are left alone",
 			State{MediaURL: "https://example.com/v.mp4", Rate: 2},
 			Play, 0,
-			State{MediaURL: "https://example.com/v.mp4", Playing: true, UpdatedAt: 9000, Rate: 2, Version: 1},
+			State{MediaURL: "https://example.com/v.mp4", Playing: true, UpdatedAt: 9000 + MinLeadMs, Rate: 2, Version: 1},
 		},
 	}
 	for _, tt := range tests {
@@ -252,13 +252,51 @@ func TestRoomFull(t *testing.T) {
 }
 
 // playingRoom returns a room playing from 10 s at time 1000, with alice and bob in it.
+func TestLead(t *testing.T) {
+	r := New("room")
+	if got := r.Lead(); got != MinLeadMs {
+		t.Fatalf("empty room lead = %d, want %d", got, MinLeadMs)
+	}
+	_ = r.Join("alice", "Alice", &recorder{}, 0)
+	if got := r.Lead(); got != DefaultRTTMs+LeadMargin {
+		t.Fatalf("lead before any round trip = %d, want the default", got)
+	}
+	r.SetRTT("alice", 20)
+	if got := r.Lead(); got != MinLeadMs {
+		t.Fatalf("fast room lead = %d, want the minimum %d", got, MinLeadMs)
+	}
+	_ = r.Join("bob", "Bob", &recorder{}, 0)
+	r.SetRTT("bob", 300.4)
+	if got := r.Lead(); got != 351 {
+		t.Fatalf("lead = %d, want bob's 300.4 ms rounded up plus %d", got, LeadMargin)
+	}
+	_ = r.Join("bob", "Bob", &recorder{}, 0) // reconnect keeps the round trip
+	if got := r.Lead(); got != 351 {
+		t.Fatalf("lead after bob rejoined = %d, want 351", got)
+	}
+	r.SetRTT("bob", 5000)
+	if got := r.Lead(); got != MaxLeadMs {
+		t.Fatalf("slow room lead = %d, want the maximum %d", got, MaxLeadMs)
+	}
+	r.Leave("bob", r.members["bob"].peer, 0)
+	if got := r.Lead(); got != MinLeadMs {
+		t.Fatalf("lead after bob left = %d, want %d", got, MinLeadMs)
+	}
+	r.SetRTT("nobody", 900) // not a member: ignored
+	if got := r.Lead(); got != MinLeadMs {
+		t.Fatalf("lead = %d, want a non-member's round trip ignored", got)
+	}
+}
+
 func playingRoom(t *testing.T) (*Room, *recorder, *recorder) {
 	t.Helper()
 	r := New("room")
 	alice, bob := &recorder{}, &recorder{}
 	_ = r.Join("alice", "Alice", alice, 0)
 	_ = r.Join("bob", "Bob", bob, 0)
-	r.Apply(Play, 10, "alice", 1000)
+	r.SetRTT("alice", 30)
+	r.SetRTT("bob", 50)
+	r.Apply(Play, 10, "alice", 900) // starts at 1000, after a 100 ms lead
 	return r, alice, bob
 }
 
@@ -295,8 +333,8 @@ func TestBufferingPausesAndResumes(t *testing.T) {
 
 	r.SetBuffering("bob", false, 5000)
 	sc = lastState(t, bob)
-	if sc.Action != Buffer || !sc.State.Playing || sc.State.Position != 12 || sc.State.UpdatedAt != 5000 || sc.State.Version != 3 {
-		t.Fatalf("got %+v, want playing again from 12", sc)
+	if sc.Action != Buffer || !sc.State.Playing || sc.State.Position != 12 || sc.State.UpdatedAt != 5100 || sc.State.Version != 3 {
+		t.Fatalf("got %+v, want playing again from 12 after the lead", sc)
 	}
 }
 

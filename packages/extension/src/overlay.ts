@@ -17,6 +17,7 @@ const MODE_LABELS: Record<SyncStats["mode"], string> = {
   idle: "not in a room",
   held: "ad showing, sitting out",
   settling: "new video loading",
+  starting: "starting with everyone",
   following: "following",
 };
 

@@ -136,6 +136,20 @@ describe("RoomSession", () => {
     expect(socket.sentTypes().filter((t) => t === "ping")).toHaveLength(5);
   });
 
+  it("tells the server its round trip on later pings", () => {
+    socket.onopen?.(new Event("open"));
+    welcome();
+    expect(socket.sent.at(-1)).not.toHaveProperty("rttMs");
+    const ping = socket.sent.at(-1)!;
+    now += 40;
+    socket.receive({
+      type: "pong",
+      clientTime: ping.clientTime as number,
+      serverTime: 9_000,
+    });
+    expect(socket.sent.at(-1)).toMatchObject({ type: "ping", rttMs: 40 });
+  });
+
   it("reports buffering changes once joined", () => {
     session.setBuffering(true);
     expect(socket.sent).toEqual([]);

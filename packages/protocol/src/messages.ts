@@ -11,6 +11,9 @@ export const MAX_MEDIA_URL = 2048;
 /** Longest chat message, in characters. */
 export const MAX_CHAT = 500;
 
+/** Largest round trip a ping may report, in ms. */
+export const MAX_RTT_MS = 60_000;
+
 /** Authoritative playback state of a room, owned by the server (Go: room.State). */
 export interface RoomState {
   /** What's being watched. Empty until someone sets it. */
@@ -74,6 +77,11 @@ export interface PingMessage {
   type: "ping";
   /** Client local time in ms. */
   clientTime: number;
+  /**
+   * The client's current round-trip estimate in ms, once it has one. The
+   * server schedules starts far enough ahead for its slowest member.
+   */
+  rttMs?: number;
 }
 
 /** Whether this client's video is stalled loading. The room waits for it while playing. */
