@@ -3,3 +3,5 @@ dist/
 *.mp4
 *.webm
 .DS_Store
+test-results/
+playwright-report/
