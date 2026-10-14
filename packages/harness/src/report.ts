@@ -47,7 +47,7 @@ export function measure(
     runs: seeds.length,
     p50: percentile(settled, 50),
     p95: percentile(settled, 95),
-    max: Math.max(...settled),
+    max: settled.reduce((a, b) => Math.max(a, b), -Infinity),
     p95All: percentile(drift, 95),
     within: drift.filter((d) => d < IN_SYNC_MS).length / drift.length,
     seekConvergeP50: percentile(converged, 50),

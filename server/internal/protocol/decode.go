@@ -43,7 +43,11 @@ func DecodeClientMessage(data []byte) (ClientMessage, error) {
 	case TypeMedia:
 		msg = Media{BaseVersion: r.int("baseVersion", 0), MediaURL: r.mediaURL("mediaUrl")}
 	case TypePing:
-		msg = Ping{ClientTime: r.float("clientTime")}
+		m := Ping{ClientTime: r.float("clientTime")}
+		if r.has("rttMs") {
+			m.RTTMs = r.rtt("rttMs")
+		}
+		msg = m
 	case TypeBuffering:
 		msg = Buffering{Buffering: r.boolean("buffering")}
 	case TypeChat:
@@ -178,6 +182,14 @@ func (r *reader) position(key string) float64 {
 	v := r.float(key)
 	if v < 0 {
 		r.fail(key, "must be >= 0")
+	}
+	return v
+}
+
+func (r *reader) rtt(key string) float64 {
+	v := r.float(key)
+	if r.err == nil && (v < 0 || v > MaxRTTMs) {
+		r.fail(key, "must be between 0 and %d", MaxRTTMs)
 	}
 	return v
 }

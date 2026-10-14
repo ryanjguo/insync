@@ -24,6 +24,9 @@ const MaxMediaURL = 2048
 // MaxChat is the longest chat message, in characters.
 const MaxChat = 500
 
+// MaxRTTMs is the largest round trip a ping may report, in ms.
+const MaxRTTMs = 60000
+
 // Message types.
 const (
 	TypeJoin  = "join"
@@ -102,6 +105,9 @@ type Media struct {
 type Ping struct {
 	// ClientTime is the client's local time in ms.
 	ClientTime float64 `json:"clientTime"`
+	// RTTMs is the client's current round-trip estimate in ms, if it has one
+	// yet (0 when absent). The server uses it to schedule starts.
+	RTTMs float64 `json:"rttMs,omitempty"`
 }
 
 // Buffering reports whether the client's video is stalled loading.

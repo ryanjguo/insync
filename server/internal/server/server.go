@@ -138,6 +138,9 @@ func (s *Server) handleMessage(c *client, msg protocol.ClientMessage) {
 	switch m := msg.(type) {
 	case protocol.Ping:
 		c.send(protocol.Pong{ClientTime: m.ClientTime, ServerTime: nowMs})
+		if c.room != nil && m.RTTMs > 0 {
+			c.room.SetRTT(c.id, m.RTTMs)
+		}
 	case protocol.Join:
 		s.join(c, m, nowMs)
 	case protocol.Intent:

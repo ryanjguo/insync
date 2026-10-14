@@ -47,7 +47,12 @@ position at server time `t` is:
 - playing otherwise: `position + (t - updatedAt) / 1000 * rate`
 
 A scheduled start ("play from P at server time T + lead") is a playing state
-whose `updatedAt` is in the future. `mediaUrl` is an empty string until someone
+whose `updatedAt` is in the future. The server schedules a `play`, a `seek`
+while playing, and the resume after buffering this way, so the new state
+reaches everyone before it takes effect and every video starts together. The
+lead is the slowest member's reported round trip (200 ms for a member that
+hasn't reported one) plus 50 ms, kept between 100 ms and 1 s. A client holds
+its video at `position` until `updatedAt`. `mediaUrl` is an empty string until someone
 sets it with `media`.
 
 ## Identifiers
@@ -64,9 +69,13 @@ sets it with `media`.
 | `pause`     | `baseVersion`, `position`                        | Pause at `position`.                                                  |
 | `seek`      | `baseVersion`, `position`                        | Jump to `position`, keeping play/pause as is.                         |
 | `media`     | `baseVersion`, `mediaUrl`                        | Switch the room to another video (see below).                         |
-| `ping`      | `clientTime`                                     | Clock sync probe; `clientTime` is the client's local time in ms.      |
+| `ping`      | `clientTime`, `rttMs?`                           | Clock sync probe; `clientTime` is the client's local time in ms.      |
 | `buffering` | `buffering`                                      | Whether this client's video is stalled loading (see below).           |
 | `chat`      | `text`                                           | Send a chat message to the room (1–500 characters after trimming).    |
+
+`rttMs` on a `ping` is the client's current round-trip estimate in ms
+(`0`–`60000`), sent once it has one. The server uses it to choose the lead
+for scheduled starts.
 
 ## Server → client
 

@@ -235,7 +235,9 @@ export class RoomSession {
       this.dropped();
       return;
     }
-    this.send({ type: "ping", clientTime: this.now() });
+    const ping: ClientMessage = { type: "ping", clientTime: this.now() };
+    if (this.snap.rttMs !== null) ping.rttMs = this.snap.rttMs;
+    this.send(ping);
   }
 
   close(): void {

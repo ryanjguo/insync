@@ -57,6 +57,7 @@ func TestRoundTrip(t *testing.T) {
 		Intent{Action: TypeSeek, BaseVersion: 9, Position: 3600},
 		Media{BaseVersion: 2, MediaURL: "https://www.youtube.com/watch?v=abc"},
 		Ping{ClientTime: 123.456},
+		Ping{ClientTime: 123.456, RTTMs: 42.5},
 		Buffering{Buffering: true},
 		Buffering{Buffering: false},
 		Chat{Text: "brb, popcorn 🍿"},

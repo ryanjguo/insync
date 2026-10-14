@@ -437,6 +437,107 @@ describe("PlayerSync", () => {
     });
   });
 
+  describe("scheduled starts", () => {
+    it("holds the video at the start position until the scheduled time", () => {
+      sync.apply(state({ playing: true, position: 20, updatedAt: now + 300 }));
+      expect(media.paused).toBe(true);
+      expect(media.currentTime).toBe(20);
+      expect(sync.stats()).toMatchObject({ mode: "starting", driftSec: null });
+
+      now += 300;
+      runTimers();
+      expect(media.paused).toBe(false);
+      expect(sync.stats().mode).toBe("following");
+      expect(sent).toEqual([]);
+    });
+
+    it("keeps waiting if the timer fires early", () => {
+      sync.apply(state({ playing: true, position: 20, updatedAt: now + 300 }));
+      now += 100;
+      runTimers();
+      expect(media.paused).toBe(true);
+      now += 200;
+      runTimers();
+      expect(media.paused).toBe(false);
+    });
+
+    it("lets whoever pressed play wait for the room instead of jumping back", () => {
+      sync.apply(state({ position: 10, version: 1 }));
+      media.userSeek(10);
+      media.userPlay();
+      now += 200;
+      media.advance(0.2);
+      // The server schedules the play 100 ms after it arrived.
+      sync.apply(
+        state({
+          playing: true,
+          position: 10,
+          updatedAt: now + 100,
+          version: 2,
+        }),
+      );
+      expect(media.paused).toBe(true);
+      expect(media.currentTime).toBeCloseTo(10.2);
+
+      now += 100; // the room starts, but is still behind this video
+      runTimers();
+      expect(media.paused).toBe(true);
+      now += 200; // the room reaches 10.2
+      runTimers();
+      expect(media.paused).toBe(false);
+      expect(media.currentTime).toBeCloseTo(10.2);
+      expect(sent).toEqual([{ type: "play", baseVersion: 1, position: 10 }]);
+    });
+
+    it("seeks to the start position when the video is far off", () => {
+      media.currentTime = 50;
+      sync.apply(state({ playing: true, position: 20, updatedAt: now + 300 }));
+      expect(media.currentTime).toBe(20);
+      media.currentTime = 19.5;
+      sync.apply(
+        state({
+          playing: true,
+          position: 20,
+          updatedAt: now + 300,
+          version: 2,
+        }),
+      );
+      expect(media.currentTime).toBe(20);
+      expect(sent).toEqual([]);
+    });
+
+    it("keeps holding when the user presses play early", () => {
+      sync.apply(state({ playing: true, position: 20, updatedAt: now + 300 }));
+      media.userPlay();
+      expect(media.paused).toBe(true);
+      expect(sent).toEqual([]);
+    });
+
+    it("still sends a seek the user makes while waiting", () => {
+      sync.apply(state({ playing: true, position: 20, updatedAt: now + 300 }));
+      media.userSeek(90);
+      expect(sent).toEqual([{ type: "seek", baseVersion: 1, position: 90 }]);
+      now += 300;
+      runTimers();
+      expect(media.paused).toBe(true); // the seek dropped the old start
+    });
+
+    it("drops a scheduled start when a newer state arrives first", () => {
+      sync.apply(
+        state({
+          playing: true,
+          position: 20,
+          updatedAt: now + 300,
+          version: 2,
+        }),
+      );
+      sync.apply(state({ position: 20, version: 3 }));
+      now += 300;
+      runTimers();
+      expect(media.paused).toBe(true);
+    });
+  });
+
   describe("buffering", () => {
     const playing = () =>
       state({ playing: true, position: 0, updatedAt: now, version: 2 });

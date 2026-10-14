@@ -6,6 +6,7 @@ import {
   MAX_CHAT,
   MAX_MEDIA_URL,
   MAX_RATE,
+  MAX_RTT_MS,
   MIN_RATE,
   type ClientMessage,
   type ErrorCode,
@@ -193,8 +194,19 @@ export function parseClientMessage(raw: unknown): ParseResult<ClientMessage> {
           baseVersion: integer(o, "baseVersion", p, 0),
           mediaUrl: mediaUrl(o, "mediaUrl", p),
         };
-      case "ping":
-        return { type: "ping", clientTime: finiteNumber(o, "clientTime", p) };
+      case "ping": {
+        const msg: ClientMessage = {
+          type: "ping",
+          clientTime: finiteNumber(o, "clientTime", p),
+        };
+        if (o.rttMs !== undefined && o.rttMs !== null) {
+          const rttMs = finiteNumber(o, "rttMs", p);
+          if (rttMs < 0 || rttMs > MAX_RTT_MS)
+            fail(`${p}.rttMs must be between 0 and ${MAX_RTT_MS}`);
+          msg.rttMs = rttMs;
+        }
+        return msg;
+      }
       case "buffering":
         return { type: "buffering", buffering: boolean(o, "buffering", p) };
       case "chat":
