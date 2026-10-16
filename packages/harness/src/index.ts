@@ -3,8 +3,8 @@ import { measure, table } from "./report";
 import { scenarios } from "./scenarios";
 
 // Runs the plan's scenarios against the extension's real sync code on a
-// simulated network and prints a drift table. `--write <file>` also puts it
-// in that file, between the results markers.
+// simulated network and prints a drift table. Each `--write <file>` also puts
+// it in that file, between the results markers.
 
 const SEEDS = [1, 2, 3, 4, 5];
 const DURATION_MS = 10 * 60_000;
@@ -28,9 +28,10 @@ for (const r of reports) {
 const out = lines.join("\n");
 console.log(out);
 
-const at = process.argv.indexOf("--write");
-if (at !== -1) {
-  const file = process.argv[at + 1];
+const args = process.argv.slice(2);
+for (let i = 0; i < args.length; i++) {
+  if (args[i] !== "--write") continue;
+  const file = args[++i];
   if (!file) throw new Error("--write needs a file name");
   const doc = readFileSync(file, "utf8");
   const from = doc.indexOf(START);
