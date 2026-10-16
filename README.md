@@ -6,10 +6,38 @@ state; a Chrome extension steers the local player toward it. The goal is
 measured sync quality: drift numbers under simulated bad networks, not just
 "it works."
 
-> Status: first demo. Tabs in the same room mirror each other's play, pause,
-> seek, speed and choice of video through the server, and each tab keeps steering its
-> video back toward the room while it plays. The harness measures drift over
-> simulated bad networks: see [sync drift results](packages/harness/RESULTS.md).
+> Status: the core is done. Rooms sync play, pause, seek, speed and choice of
+> video on YouTube and other HTML5 video sites, with scheduled starts, drift
+> correction, buffering pauses, reconnects, chat and invite links. Measured
+> drift is 17–46 ms at p95 once settled, under simulated bad networks (see
+> [results](#results)). The server is ready to deploy.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph Browser["Each viewer's Chrome tab"]
+    direction TB
+    CS["Content script<br/>(every frame with a video)<br/>PlayerSync steers the video"]
+    SW["Service worker<br/>RoomSession: one WebSocket per tab,<br/>clock sync, reconnects"]
+    PU["Popup<br/>join, invite, chat"]
+    CS <-- "port: player events / room state" --> SW
+    PU <-- "messages" --> SW
+  end
+  subgraph Server["Go server"]
+    direction TB
+    WS["WebSocket handler"]
+    RM["Rooms in memory<br/>authoritative state + version"]
+    WS --> RM
+  end
+  SW <== "JSON over WebSocket<br/>intents, pings / state, pongs" ==> WS
+```
+
+Browsers never talk to each other. Every action goes to the server as an
+intent, the server applies it to the room and broadcasts the new state, and
+every player steers itself toward that state. The content script runs in
+every frame, so a player inside a cross-origin iframe opens its own port to
+the service worker like any other.
 
 ## Layout
 
@@ -168,10 +196,70 @@ Chromium you already have.
   seeks, at most once every 3 s so a slow-buffering video isn't stuck seeking
   (`sync-core/src/drift.ts`, applied in `extension/src/player.ts`).
 
+## Design decisions
+
+- **Nudge the speed, don't seek.** A seek stalls the video while it loads and
+  is visible; playing 3% faster or slower isn't. So drift under ~1 s is fixed
+  with `playbackRate` and only bigger drift seeks. Under 50 ms nothing
+  happens, so videos aren't nudged back and forth over noise. The thresholds
+  are the plan's starting guesses; the harness shows they keep settled drift
+  under 50 ms at p95.
+- **Echo suppression.** Applying the room's state fires the same `play`,
+  `pause` and `seeked` events a user's click does, and sending those back
+  makes two tabs bounce commands forever. Instead of guessing which events
+  the extension caused, a local event only counts as the user's when it
+  disagrees with the room (playing while the room is paused, or far from
+  where the room should be). The extension's own changes always agree, so
+  they are never sent back, however late their events arrive
+  (`extension/src/player.ts`).
+- **Conflicts: the later arrival wins.** Anyone can control playback. The
+  server applies intents in the order they arrive, bumps the room's version
+  and broadcasts; players ignore states older than the one they have. Two
+  people pressing at once both converge on whichever reached the server last.
+- **Buffering pauses the room.** When someone's video stalls for data, the
+  room pauses where it is and resumes, on a scheduled start, once nobody is
+  still loading. Anyone pressing play or pause overrides the wait, which is
+  the way out when one video is stuck. A YouTube ad in one tab doesn't pause
+  anyone: that tab sits out and jumps to the room when the ad ends.
+- **Joins and reconnects get a snapshot.** A joining or reconnecting tab gets
+  the room's full state and seeks to where the room is now. A dropped
+  connection retries with backoff and rejoins as the same member.
+- **Sync logic has no DOM.** Clock sync and drift control live in
+  `sync-core`, so the harness runs the exact code the extension runs, on a
+  simulated clock.
+
+## Results
+
+Drift from where the server says the room should be, measured by running the
+extension's real sync code over simulated bad networks, five ten-minute runs
+per scenario. The scenarios, how it's measured and why the numbers look like
+this are in [sync drift results](packages/harness/RESULTS.md). Regenerate both
+tables with `npm run results -w @wps/harness`.
+
+<!-- results:start -->
+
+| Scenario      | Drift p50 | Drift p95 | Drift max | p95 incl. catch-up | Time within 100 ms | Converge after seek (median / max)     |
+| ------------- | --------- | --------- | --------- | ------------------ | ------------------ | -------------------------------------- |
+| Baseline      | 15 ms     | 46 ms     | 71 ms     | 47 ms              | 99.9%              | 0.2 s / 0.2 s                          |
+| Cross-country | 9 ms      | 35 ms     | 98 ms     | 36 ms              | 99.7%              | 0.6 s / 0.6 s                          |
+| Bad Wi-Fi     | 14 ms     | 44 ms     | 100 ms    | 45 ms              | 99.2%              | 1.3 s / 2.6 s                          |
+| Lag spike     | 12 ms     | 45 ms     | 100 ms    | 46 ms              | 99.7%              | 0.3 s / 0.4 s                          |
+| Mixed room    | 6 ms      | 17 ms     | 100 ms    | 289 ms             | 93.6%              | 1.1 s / 3.9 s (6 of 595 never settled) |
+
+Lag spike, back in sync after the stall ended: 1.2 s, 0.3 s, 0.3 s, 1.7 s, 0.3 s.
+
+<!-- results:end -->
+
 ## Roadmap
 
-1. Rooms and naive sync across two tabs of the test page
-2. Real sync: clock offset, scheduled starts, drift correction, debug overlay
-3. Browser extension working end to end on YouTube
-4. Robustness: buffering, reconnects, late joiners, conflicts, chat
-5. Measure and ship: network-impairment harness, deploy, results table
+1. ~~Rooms and naive sync across two tabs of the test page~~
+2. ~~Real sync: clock offset, scheduled starts, drift correction, debug overlay~~
+3. ~~Browser extension working end to end on YouTube~~
+4. ~~Robustness: buffering, reconnects, late joiners, conflicts, chat~~
+5. Measure and ship: ~~network-impairment harness~~, ~~results table~~,
+   deploy (configs ready, not live yet)
+
+Next: [host-only mode](https://github.com/ryanjguo/insync/issues/36),
+[warning when videos differ in length](https://github.com/ryanjguo/insync/issues/37),
+[per-site adapters](https://github.com/ryanjguo/insync/issues/38) and
+[Firefox](https://github.com/ryanjguo/insync/issues/39).

@@ -6,7 +6,7 @@
   "description": "Simulated viewers that run the extension's real sync code over an impaired network and report drift.",
   "scripts": {
     "start": "tsx src/index.ts",
-    "results": "tsx src/index.ts --write RESULTS.md && prettier --write RESULTS.md"
+    "results": "tsx src/index.ts --write RESULTS.md --write ../../README.md && prettier --write RESULTS.md ../../README.md"
   },
   "dependencies": {
     "@wps/extension": "*",
