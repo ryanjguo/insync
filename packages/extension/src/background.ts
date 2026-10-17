@@ -26,6 +26,8 @@ interface Tab {
   ports: Set<chrome.runtime.Port>;
   /** Ports whose video is stalled loading. */
   buffering: Set<chrome.runtime.Port>;
+  /** Each port's video length in seconds (0 when unknown). */
+  durations: Map<chrome.runtime.Port, number>;
   playBlocked: boolean;
   adShowing: boolean;
   /** Takes the tab to the room's video, and the room to the tab's. */
@@ -47,6 +49,7 @@ function tab(id: number): Tab {
       serverUrl: null,
       ports: new Set(),
       buffering: new Set(),
+      durations: new Map(),
       playBlocked: false,
       adShowing: false,
       unread: 0,
@@ -88,8 +91,20 @@ function roomUpdate(t: Tab): RoomUpdate {
   };
 }
 
+/**
+ * Tell the room how long the tab's video is, so others can notice a
+ * different one. Unknown (0) while the tab is off the room's video or an ad
+ * is showing.
+ */
+function reportDuration(t: Tab): void {
+  const lengths =
+    t.follower.onRoomVideo && !t.adShowing ? [...t.durations.values()] : [];
+  t.session?.setDuration(Math.max(0, ...lengths));
+}
+
 /** Send the tab's frames the latest update, if it changed. */
 function push(t: Tab): void {
+  reportDuration(t);
   const update = roomUpdate(t);
   const last = t.sent;
   if (
@@ -214,15 +229,20 @@ chrome.runtime.onConnect.addListener((port) => {
       t.playBlocked = true;
     } else if (msg.kind === "ad") {
       t.adShowing = msg.showing;
+      reportDuration(t);
     } else if (msg.kind === "buffering") {
       if (msg.buffering) t.buffering.add(port);
       else t.buffering.delete(port);
       reportBuffering(t);
+    } else if (msg.kind === "duration") {
+      t.durations.set(port, msg.duration);
+      reportDuration(t);
     }
   });
   port.onDisconnect.addListener(() => {
     t.ports.delete(port);
     if (t.buffering.delete(port)) reportBuffering(t);
+    if (t.durations.delete(port)) reportDuration(t);
     t.follower.setHasVideo(t.ports.size > 0);
   });
 });

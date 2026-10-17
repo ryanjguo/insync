@@ -1,7 +1,8 @@
 // End to end: the built extension in a real Chromium, against the real Go
 // server, on a page with a <video>. Two tabs join one room through an invite
 // link, and playing, pausing, seeking and changing speed in one shows up in
-// the other. In a host-only room, only the host's changes do.
+// the other. In a host-only room, only the host's changes do, and a tab
+// watching a different-length video is noticed.
 
 import {
   chromium,
@@ -21,6 +22,8 @@ const root = fileURLToPath(new URL("../../../", import.meta.url));
 const extensionDir = join(root, "packages/extension/dist");
 /** Seconds of media on the test page. */
 const MEDIA_SEC = 120;
+/** Seconds of the other media, for a tab watching something else. */
+const SHORT_MEDIA_SEC = 90;
 /** How far apart two tabs may be and still count as in sync. Seconds. */
 const IN_SYNC_SEC = 0.25;
 
@@ -87,6 +90,7 @@ test.beforeAll(async () => {
   const site = join(dir, "site");
   execFileSync("mkdir", ["-p", site]);
   writeFileSync(join(site, "media.wav"), silentWav(MEDIA_SEC));
+  writeFileSync(join(site, "short.wav"), silentWav(SHORT_MEDIA_SEC));
   writeFileSync(
     join(site, "index.html"),
     `<!doctype html><title>e2e</title>
@@ -216,6 +220,23 @@ async function setHostOnly(
   if (!sent) throw new Error(`no host tab in ${room}`);
 }
 
+/** The video lengths the members of `room` reported, in join order. */
+async function memberLengths(status: Page, room: string): Promise<number[]> {
+  return status.evaluate(async (room) => {
+    for (const t of await chrome.tabs.query({})) {
+      const s = await chrome.runtime.sendMessage({
+        kind: "status",
+        tabId: t.id,
+      });
+      if (s?.session?.roomId === room)
+        return s.session.members.map(
+          (m: { duration?: number }) => m.duration ?? 0,
+        );
+    }
+    return [];
+  }, room);
+}
+
 function inviteTo(room: string): string {
   return `${pageUrl}#insync=${room}&insync-server=${encodeURIComponent(wsUrl)}`;
 }
@@ -308,4 +329,26 @@ test("in a host-only room, only the host controls playback", async () => {
   await new Promise((r) => setTimeout(r, 500));
   await control(guest, { do: "pause" });
   await expect.poll(async () => (await media(host)).paused).toBe(true);
+});
+
+test("everyone sees each member's video length", async () => {
+  const status = await context.newPage();
+  await status.goto(`chrome-extension://${extensionId}/popup.html`);
+  const joined = () => joinedTabs(status, "e2e-length");
+  const lengths = () => memberLengths(status, "e2e-length");
+
+  const a = await context.newPage();
+  await a.goto(inviteTo("e2e-length"));
+  await expect.poll(joined).toBe(1);
+  const b = await context.newPage();
+  await b.goto(inviteTo("e2e-length"));
+  await expect.poll(joined).toBe(2);
+  await expect.poll(lengths).toEqual([MEDIA_SEC, MEDIA_SEC]);
+
+  // The second tab's page swaps in different media, as a site showing
+  // another episode would.
+  await b.evaluate(() => {
+    document.querySelector("video")!.src = "short.wav";
+  });
+  await expect.poll(lengths).toEqual([MEDIA_SEC, SHORT_MEDIA_SEC]);
 });

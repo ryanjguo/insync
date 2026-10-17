@@ -81,6 +81,8 @@ type Member struct {
 	Buffering bool
 	// Host is true for the member who can control playback in host-only mode.
 	Host bool
+	// Duration is the length of the member's video in seconds, 0 when unknown.
+	Duration float64
 }
 
 // Event is something a Peer is told about. It is one of Joined,
@@ -136,6 +138,7 @@ type member struct {
 	joined    uint64 // join order, for a stable member list
 	buffering bool
 	rttMs     float64 // round trip to the member's client; 0 until reported
+	duration  float64 // length of the member's video in seconds; 0 when unknown
 }
 
 // Room is a single room. It is safe for concurrent use.
@@ -181,6 +184,7 @@ func (r *Room) Join(clientID, name string, p Peer, nowMs int64) error {
 		// Still buffering until the member says otherwise: it reports again on rejoining.
 		m.buffering = old.buffering
 		m.rttMs = old.rttMs
+		m.duration = old.duration
 	}
 	r.members[clientID] = m
 	if r.host == "" {
@@ -360,6 +364,20 @@ func (r *Room) resumeIfReady(by string, nowMs int64) {
 	r.broadcast(StateChanged{State: r.state, Action: Buffer, By: by}, "")
 }
 
+// SetDuration records how long a member's video is, in seconds (0 when
+// unknown), and tells everyone when it changes, so they can notice someone
+// watching something else.
+func (r *Room) SetDuration(clientID string, seconds float64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	m, ok := r.members[clientID]
+	if !ok || m.duration == seconds {
+		return
+	}
+	m.duration = seconds
+	r.broadcast(MembersChanged{Members: r.memberList()}, "")
+}
+
 // SetRTT records a member's round trip to the server, in ms, for scheduling starts.
 func (r *Room) SetRTT(clientID string, rttMs float64) {
 	r.mu.Lock()
@@ -421,7 +439,7 @@ func (r *Room) memberList() []Member {
 	out := make([]Member, len(ids))
 	for i, id := range ids {
 		m := r.members[id]
-		out[i] = Member{ClientID: id, Name: m.name, Buffering: m.buffering, Host: id == r.host}
+		out[i] = Member{ClientID: id, Name: m.name, Buffering: m.buffering, Host: id == r.host, Duration: m.duration}
 	}
 	return out
 }

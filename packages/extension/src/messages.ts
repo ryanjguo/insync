@@ -36,7 +36,9 @@ export type PlayerEvent =
   /** An ad started or ended. The video sits out the room until it ends. */
   | { kind: "ad"; showing: boolean }
   /** The video stalled loading, or can play again. The room waits for it. */
-  | { kind: "buffering"; buffering: boolean };
+  | { kind: "buffering"; buffering: boolean }
+  /** How long the video is, in seconds; 0 when unknown. */
+  | { kind: "duration"; duration: number };
 
 /** Top frame's content script -> service worker: the page it's on (on load and whenever its URL changes). */
 export interface PageReport {

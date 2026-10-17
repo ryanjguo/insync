@@ -27,6 +27,9 @@ const MaxChat = 500
 // MaxRTTMs is the largest round trip a ping may report, in ms.
 const MaxRTTMs = 60000
 
+// MaxDurationSec is the longest video length a client may report, in seconds.
+const MaxDurationSec = 1_000_000
+
 // Message types.
 const (
 	TypeJoin  = "join"
@@ -42,6 +45,8 @@ const (
 	TypeChat = "chat"
 	// TypeControl turns host-only mode on or off. It is also a StateUpdate cause.
 	TypeControl = "control"
+	// TypeDuration reports how long a client's video is.
+	TypeDuration = "duration"
 
 	TypeWelcome  = "welcome"
 	TypeState    = "state"
@@ -74,6 +79,8 @@ type Member struct {
 	Buffering bool `json:"buffering,omitempty"`
 	// Host is true for the room's host, who alone controls playback in host-only mode.
 	Host bool `json:"host,omitempty"`
+	// Duration is the length of the member's video in seconds, left out when unknown.
+	Duration float64 `json:"duration,omitempty"`
 }
 
 // ClientMessage is any message a client sends to the server.
@@ -132,6 +139,12 @@ type Chat struct {
 	Text string `json:"text"`
 }
 
+// Duration reports how long the client's video is, in seconds; 0 when unknown
+// (not loaded yet, a live stream, or not on the room's video).
+type Duration struct {
+	Duration float64 `json:"duration"`
+}
+
 // Control turns host-only mode on or off. Only the host may send it.
 type Control struct {
 	HostOnly bool `json:"hostOnly"`
@@ -160,6 +173,9 @@ func (Chat) ClientType() string { return TypeChat }
 
 // ClientType implements ClientMessage.
 func (Control) ClientType() string { return TypeControl }
+
+// ClientType implements ClientMessage.
+func (Duration) ClientType() string { return TypeDuration }
 
 // Server -> client.
 
@@ -292,6 +308,12 @@ func (m Buffering) MarshalJSON() ([]byte, error) {
 func (m Chat) MarshalJSON() ([]byte, error) {
 	type wire Chat
 	return marshalTyped(TypeChat, wire(m))
+}
+
+// MarshalJSON adds the "type" field.
+func (m Duration) MarshalJSON() ([]byte, error) {
+	type wire Duration
+	return marshalTyped(TypeDuration, wire(m))
 }
 
 // MarshalJSON adds the "type" field.

@@ -170,6 +170,12 @@ func (s *Server) handleMessage(c *client, msg protocol.ClientMessage) {
 			return
 		}
 		c.room.Chat(c.id, m.Text, nowMs)
+	case protocol.Duration:
+		if c.room == nil {
+			c.send(protocol.Error{Code: protocol.ErrNotJoined, Message: "join a room first"})
+			return
+		}
+		c.room.SetDuration(c.id, m.Duration)
 	case protocol.Control:
 		if c.room == nil {
 			c.send(protocol.Error{Code: protocol.ErrNotJoined, Message: "join a room first"})
@@ -252,7 +258,7 @@ func toMessage(e room.Event) protocol.ServerMessage {
 func toMembers(ms []room.Member) []protocol.Member {
 	out := make([]protocol.Member, len(ms))
 	for i, m := range ms {
-		out[i] = protocol.Member{ClientID: m.ClientID, Name: m.Name, Buffering: m.Buffering, Host: m.Host}
+		out[i] = protocol.Member{ClientID: m.ClientID, Name: m.Name, Buffering: m.Buffering, Host: m.Host, Duration: m.Duration}
 	}
 	return out
 }

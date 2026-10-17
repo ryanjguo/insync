@@ -78,6 +78,7 @@ sets it with `media`.
 | `buffering` | `buffering`                                      | Whether this client's video is stalled loading (see below).           |
 | `chat`      | `text`                                           | Send a chat message to the room (1–500 characters after trimming).    |
 | `control`   | `hostOnly`                                       | Turn host-only mode on or off (host only, see below).                 |
+| `duration`  | `duration`                                       | How long this client's video is (see Video lengths below).            |
 
 `rttMs` on a `ping` is the client's current round-trip estimate in ms
 (`0`–`60000`), sent once it has one. The server uses it to choose the lead
@@ -94,8 +95,8 @@ for scheduled starts.
 | `chat`     | `from`, `name`, `text`, `sentAt`                       | A member's chat message (see Chat below).                                                                                                                      |
 | `error`    | `code`, `message`                                      | `code` is one of `bad_message`, `unsupported_version`, `room_full`, `not_joined`, `not_host`.                                                                  |
 
-A member is `{ "clientId": "...", "name": "...", "buffering": true, "host": true }`;
-`buffering` and `host` are left out when false.
+A member is `{ "clientId": "...", "name": "...", "buffering": true, "host": true, "duration": 5421.3 }`;
+`buffering` and `host` are left out when false, `duration` when unknown.
 
 ## Playback speed
 
@@ -142,6 +143,15 @@ as a `chat` with the sender's `clientId` (`from`), their name at the time, and
 `sentAt` (server time). A room keeps its last 50 messages: someone joining (or
 rejoining) gets them right after `welcome`, oldest first. History lives in
 memory only and is lost when the server restarts.
+
+## Video lengths
+
+A client sends `duration` with the length of its video in seconds (`0`–`1000000`),
+whenever it changes: `0` means unknown (not loaded yet, a live stream, an ad
+playing, or the tab isn't on the room's video). The server keeps it as the
+member's `duration` and broadcasts a `presence` when it changes; a member who
+reconnects keeps it until they report again. Clients compare the lengths to
+warn when people seem to be watching different things.
 
 ## Host-only rooms
 

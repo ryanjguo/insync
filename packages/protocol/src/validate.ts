@@ -4,6 +4,7 @@
 import {
   ERROR_CODES,
   MAX_CHAT,
+  MAX_DURATION_SEC,
   MAX_MEDIA_URL,
   MAX_RATE,
   MAX_RTT_MS,
@@ -65,6 +66,13 @@ function integer(
 function position(o: Obj, key: string, path: string): number {
   const v = finiteNumber(o, key, path);
   if (v < 0) fail(`${path}.${key} must be >= 0`);
+  return v;
+}
+
+function duration(o: Obj, key: string, path: string): number {
+  const v = finiteNumber(o, key, path);
+  if (v < 0 || v > MAX_DURATION_SEC)
+    fail(`${path}.${key} must be between 0 and ${MAX_DURATION_SEC}`);
   return v;
 }
 
@@ -141,6 +149,8 @@ function members(o: Obj, key: string, path: string): Member[] {
       member.buffering = boolean(m, "buffering", p);
     if (m.host !== undefined && m.host !== null)
       member.host = boolean(m, "host", p);
+    if (m.duration !== undefined && m.duration !== null)
+      member.duration = duration(m, "duration", p);
     return member;
   });
 }
@@ -228,6 +238,8 @@ export function parseClientMessage(raw: unknown): ParseResult<ClientMessage> {
         return { type: "chat", text: chatText(o, "text", p) };
       case "control":
         return { type: "control", hostOnly: boolean(o, "hostOnly", p) };
+      case "duration":
+        return { type: "duration", duration: duration(o, "duration", p) };
       default:
         return fail(`unknown client message type "${o.type}"`);
     }

@@ -2,6 +2,7 @@
 // to the service worker and keeps that video following the tab's room.
 
 import { mediaKey } from "./follow";
+import { reportableLength } from "./lengths";
 import { parseInvite } from "./invite";
 import {
   CONNECT_REQUEST,
@@ -51,13 +52,29 @@ function bind(): void {
     canControl: () => room.canControl,
   });
   sync.apply(room.state);
+  for (const event of ["durationchange", "loadedmetadata"])
+    found.addEventListener(event, () => {
+      if (found === video) reportDuration();
+    });
   connect();
+  reportDuration();
+}
+
+/** Tell the service worker how long the video is, when that changes. */
+let reportedDuration: number | null = null;
+function reportDuration(force = false): void {
+  if (!video || !port) return;
+  const duration = reportableLength(video.duration);
+  if (!force && duration === reportedDuration) return;
+  reportedDuration = duration;
+  post({ kind: "duration", duration });
 }
 
 function connect(): void {
   if (port || !video || !chrome.runtime?.id) return;
   port = chrome.runtime.connect({ name: PLAYER_PORT });
   if (sync?.isHeld) post({ kind: "ad", showing: true });
+  reportDuration(true);
   port.onMessage.addListener((msg: RoomUpdate) => {
     // After a rejoin the room may have started over (a restarted server), so
     // its versions can be lower than what we had: forget the old state first.
