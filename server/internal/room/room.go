@@ -41,6 +41,9 @@ type State struct {
 	UpdatedAt int64   `json:"updatedAt"`
 	Rate      float64 `json:"rate"`
 	Version   uint64  `json:"version"`
+	// HostOnly is true when only the host may play, pause, seek, change the
+	// speed or switch video.
+	HostOnly bool `json:"hostOnly,omitempty"`
 }
 
 // ExpectedPosition returns where playback should be at server time nowMs.
@@ -66,6 +69,8 @@ const (
 	// Buffer is the room pausing because a member is buffering, or resuming
 	// once nobody is.
 	Buffer Action = "buffering"
+	// Control turns host-only mode on or off.
+	Control Action = "control"
 )
 
 // Member is someone in the room.
@@ -74,6 +79,8 @@ type Member struct {
 	Name     string
 	// Buffering is true while the member's video is stalled loading.
 	Buffering bool
+	// Host is true for the member who can control playback in host-only mode.
+	Host bool
 }
 
 // Event is something a Peer is told about. It is one of Joined,
@@ -139,6 +146,9 @@ type Room struct {
 	state    State
 	members  map[string]*member
 	joinSeen uint64
+	// host is the client ID of the room's host: the first member to join,
+	// handed to the longest-standing member when the host leaves.
+	host string
 	// waiting is true while the room is paused for buffering members and
 	// should play again once none are left.
 	waiting bool
@@ -173,6 +183,9 @@ func (r *Room) Join(clientID, name string, p Peer, nowMs int64) error {
 		m.rttMs = old.rttMs
 	}
 	r.members[clientID] = m
+	if r.host == "" {
+		r.host = clientID
+	}
 	members := r.memberList()
 	p.Send(Joined{RoomID: r.ID, ClientID: clientID, ServerTime: nowMs, State: r.state, Members: members})
 	for _, line := range r.chat {
@@ -193,6 +206,9 @@ func (r *Room) Leave(clientID string, p Peer, nowMs int64) {
 		return
 	}
 	delete(r.members, clientID)
+	if r.host == clientID {
+		r.host = r.oldestMember()
+	}
 	r.broadcast(MembersChanged{Members: r.memberList()}, "")
 	r.resumeIfReady(clientID, nowMs)
 }
@@ -264,6 +280,35 @@ func (r *Room) SetMedia(url, by string, nowMs int64) State {
 	s.MediaURL = url
 	s.Version++
 	r.broadcast(StateChanged{State: r.state, Action: Media, By: by}, "")
+	return r.state
+}
+
+// Controls reports whether a member may play, pause, seek, change the speed
+// or switch video: anyone can, unless the room is host-only.
+func (r *Room) Controls(clientID string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return !r.state.HostOnly || clientID == r.host
+}
+
+// IsHost reports whether a member is the room's host.
+func (r *Room) IsHost(clientID string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return clientID == r.host
+}
+
+// SetHostOnly turns host-only mode on or off. Playback is left as it is.
+// Setting the mode the room already has changes nothing and isn't broadcast.
+func (r *Room) SetHostOnly(on bool, by string) State {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.state.HostOnly == on {
+		return r.state
+	}
+	r.state.HostOnly = on
+	r.state.Version++
+	r.broadcast(StateChanged{State: r.state, Action: Control, By: by}, "")
 	return r.state
 }
 
@@ -376,9 +421,20 @@ func (r *Room) memberList() []Member {
 	out := make([]Member, len(ids))
 	for i, id := range ids {
 		m := r.members[id]
-		out[i] = Member{ClientID: id, Name: m.name, Buffering: m.buffering}
+		out[i] = Member{ClientID: id, Name: m.name, Buffering: m.buffering, Host: id == r.host}
 	}
 	return out
+}
+
+// oldestMember returns the member who joined first, or "" in an empty room.
+func (r *Room) oldestMember() string {
+	var oldest string
+	for id, m := range r.members {
+		if oldest == "" || m.joined < r.members[oldest].joined {
+			oldest = id
+		}
+	}
+	return oldest
 }
 
 // broadcast sends e to every member except skip.

@@ -23,6 +23,10 @@ export interface RoomUpdate {
   rttMs: number | null;
   /** Bumped on every (re)join. The state may then be older than the last one: follow it anyway. */
   joins: number;
+  /** False when the room is host-only and this tab isn't the host: the user's changes are undone, not sent. */
+  canControl: boolean;
+  /** Bumped when the server refuses a change: go back to the room's state. */
+  refused: number;
 }
 
 /** Content script -> service worker. */
@@ -60,6 +64,7 @@ export type PopupRequest =
     }
   | { kind: "leave"; tabId: number }
   | { kind: "chat"; tabId: number; text: string }
+  | { kind: "hostOnly"; tabId: number; on: boolean }
   | { kind: "status"; tabId: number };
 
 export interface TabStatus {

@@ -144,20 +144,17 @@ func (s *Server) handleMessage(c *client, msg protocol.ClientMessage) {
 	case protocol.Join:
 		s.join(c, m, nowMs)
 	case protocol.Intent:
-		if c.room == nil {
-			c.send(protocol.Error{Code: protocol.ErrNotJoined, Message: "join a room first"})
+		if !s.mayControl(c) {
 			return
 		}
 		c.room.Apply(room.Action(m.Action), m.Position, c.id, nowMs)
 	case protocol.Rate:
-		if c.room == nil {
-			c.send(protocol.Error{Code: protocol.ErrNotJoined, Message: "join a room first"})
+		if !s.mayControl(c) {
 			return
 		}
 		c.room.SetPlaybackRate(m.Rate, c.id, nowMs)
 	case protocol.Media:
-		if c.room == nil {
-			c.send(protocol.Error{Code: protocol.ErrNotJoined, Message: "join a room first"})
+		if !s.mayControl(c) {
 			return
 		}
 		c.room.SetMedia(m.MediaURL, c.id, nowMs)
@@ -173,7 +170,33 @@ func (s *Server) handleMessage(c *client, msg protocol.ClientMessage) {
 			return
 		}
 		c.room.Chat(c.id, m.Text, nowMs)
+	case protocol.Control:
+		if c.room == nil {
+			c.send(protocol.Error{Code: protocol.ErrNotJoined, Message: "join a room first"})
+			return
+		}
+		if !c.room.IsHost(c.id) {
+			c.send(protocol.Error{Code: protocol.ErrNotHost, Message: "only the host can change who controls playback"})
+			return
+		}
+		c.room.SetHostOnly(m.HostOnly, c.id)
 	}
+}
+
+// mayControl reports whether c may play, pause, seek, change the speed or
+// switch video, telling it why not when it may not. Checking before applying
+// leaves a tiny window in which host-only mode can turn on in between; the
+// change then lands as if it had arrived just before.
+func (s *Server) mayControl(c *client) bool {
+	if c.room == nil {
+		c.send(protocol.Error{Code: protocol.ErrNotJoined, Message: "join a room first"})
+		return false
+	}
+	if !c.room.Controls(c.id) {
+		c.send(protocol.Error{Code: protocol.ErrNotHost, Message: "only the host can control playback"})
+		return false
+	}
+	return true
 }
 
 func (s *Server) join(c *client, m protocol.Join, nowMs int64) {
@@ -229,7 +252,7 @@ func toMessage(e room.Event) protocol.ServerMessage {
 func toMembers(ms []room.Member) []protocol.Member {
 	out := make([]protocol.Member, len(ms))
 	for i, m := range ms {
-		out[i] = protocol.Member{ClientID: m.ClientID, Name: m.Name, Buffering: m.Buffering}
+		out[i] = protocol.Member{ClientID: m.ClientID, Name: m.Name, Buffering: m.Buffering, Host: m.Host}
 	}
 	return out
 }

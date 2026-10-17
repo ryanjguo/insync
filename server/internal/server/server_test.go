@@ -348,3 +348,52 @@ func TestChat(t *testing.T) {
 		t.Fatalf("bob: got %+v, want the earlier message", got)
 	}
 }
+
+// TestHostOnly: once the host turns host-only on, the others' play, pause,
+// seek, speed and video changes are refused, and only the host can turn it off.
+func TestHostOnly(t *testing.T) {
+	ts := newTestServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	alice, bob := dial(ctx, t, ts), dial(ctx, t, ts)
+
+	send(ctx, t, alice, `{"type":"join","protocolVersion":1,"roomId":"movie-night","name":"Alice","clientId":"alice-1"}`)
+	recv(ctx, t, alice)
+	send(ctx, t, bob, `{"type":"join","protocolVersion":1,"roomId":"movie-night","name":"Bob","clientId":"bob-1"}`)
+	w, ok := recv(ctx, t, bob).(protocol.Welcome)
+	if !ok || !w.Members[0].Host || w.Members[1].Host {
+		t.Fatalf("bob: got %+v, want alice listed as host", w)
+	}
+	recv(ctx, t, alice) // presence
+
+	send(ctx, t, bob, `{"type":"control","hostOnly":true}`)
+	if m := recv(ctx, t, bob); !isError(protocol.ErrNotHost)(m) {
+		t.Fatalf("bob: got %+v, want not_host for changing control", m)
+	}
+
+	send(ctx, t, alice, `{"type":"control","hostOnly":true}`)
+	for name, conn := range map[string]*websocket.Conn{"alice": alice, "bob": bob} {
+		u, ok := recv(ctx, t, conn).(protocol.StateUpdate)
+		if !ok || u.Cause.Action != protocol.TypeControl || !u.State.HostOnly {
+			t.Fatalf("%s: got %+v, want host-only on", name, u)
+		}
+	}
+
+	for _, msg := range []string{
+		`{"type":"play","baseVersion":1,"position":3}`,
+		`{"type":"rate","baseVersion":1,"rate":2}`,
+		`{"type":"media","baseVersion":1,"mediaUrl":"https://x.test/v"}`,
+	} {
+		send(ctx, t, bob, msg)
+		if m := recv(ctx, t, bob); !isError(protocol.ErrNotHost)(m) {
+			t.Fatalf("%s: got %+v, want not_host", msg, m)
+		}
+	}
+
+	send(ctx, t, alice, `{"type":"play","baseVersion":1,"position":3}`)
+	for name, conn := range map[string]*websocket.Conn{"alice": alice, "bob": bob} {
+		if u, ok := recv(ctx, t, conn).(protocol.StateUpdate); !ok || u.Cause.By != "alice-1" || !u.State.Playing {
+			t.Fatalf("%s: got %+v, want the host's play", name, u)
+		}
+	}
+}

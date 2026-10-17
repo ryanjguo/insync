@@ -112,6 +112,15 @@ in each. Reload any tab that was already open before the extension loaded.
 - **Not supported yet:** Netflix, Disney+ and other DRM sites, which use custom
   players that fight outside control and would need a per-site adapter.
 
+### Host-only rooms
+
+Whoever joins a room first is its host, marked "(host)" in the popup's member
+list. The host can tick **Only the host controls playback** in the popup: from
+then on, anyone else's play, pause, seek, speed change or switch of video is
+undone in their tab instead of reaching the room, and their popup says who is
+in control. If the host leaves, the person who has been in the room longest
+takes over.
+
 ### Inviting someone
 
 Once you're in a room, click **Copy invite link** in the popup and send the
@@ -174,7 +183,7 @@ npm run format     # apply Prettier
 page with a `<video>`, and opens two tabs of a real Chromium with the
 extension loaded. Both join one room through an invite link, and the test
 checks that play, pause, seek and speed changes in one tab show up in the
-other. It needs Go and a Playwright Chromium: run
+other, and that in a host-only room only the host's changes do. It needs Go and a Playwright Chromium: run
 `npx playwright install chromium` once, or point `CHROMIUM_PATH` at a
 Chromium you already have.
 
@@ -212,7 +221,8 @@ Chromium you already have.
   where the room should be). The extension's own changes always agree, so
   they are never sent back, however late their events arrive
   (`extension/src/player.ts`).
-- **Conflicts: the later arrival wins.** Anyone can control playback. The
+- **Conflicts: the later arrival wins.** Anyone can control playback
+  (unless the host makes the room host-only). The
   server applies intents in the order they arrive, bumps the room's version
   and broadcasts; players ignore states older than the one they have. Two
   people pressing at once both converge on whichever reached the server last.
@@ -259,7 +269,5 @@ Lag spike, back in sync after the stall ended: 1.2 s, 0.3 s, 0.3 s, 1.7 s, 0.3 s
 5. Measure and ship: ~~network-impairment harness~~, ~~results table~~,
    deploy (configs ready, not live yet)
 
-Next: [host-only mode](https://github.com/ryanjguo/insync/issues/36),
-[warning when videos differ in length](https://github.com/ryanjguo/insync/issues/37),
-[per-site adapters](https://github.com/ryanjguo/insync/issues/38) and
-[Firefox](https://github.com/ryanjguo/insync/issues/39).
+Since then: host-only rooms. Next:
+[warning when videos differ in length](https://github.com/ryanjguo/insync/issues/37).

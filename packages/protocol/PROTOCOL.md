@@ -20,7 +20,8 @@ sides can't silently disagree.
 
 ## Control model
 
-Anyone in the room can play, pause or seek. Clients send **intents** tagged with
+Anyone in the room can play, pause or seek, unless the host has made the room
+host-only (see Host-only rooms below). Clients send **intents** tagged with
 `baseVersion`, the last room version they saw. The server applies intents in
 arrival order, bumps `version` and broadcasts the new state. If two people act
 at once, the later arrival wins and everyone converges on it. `baseVersion` is
@@ -35,9 +36,12 @@ informational for now (logging, and later stale-intent handling).
   "position": 120.5,
   "updatedAt": 1760300000000,
   "rate": 1,
-  "version": 7
+  "version": 7,
+  "hostOnly": true
 }
 ```
+
+`hostOnly` is left out when false.
 
 `position` is the video position at server time `updatedAt`. The expected
 position at server time `t` is:
@@ -73,6 +77,7 @@ sets it with `media`.
 | `ping`      | `clientTime`, `rttMs?`                           | Clock sync probe; `clientTime` is the client's local time in ms.      |
 | `buffering` | `buffering`                                      | Whether this client's video is stalled loading (see below).           |
 | `chat`      | `text`                                           | Send a chat message to the room (1–500 characters after trimming).    |
+| `control`   | `hostOnly`                                       | Turn host-only mode on or off (host only, see below).                 |
 
 `rttMs` on a `ping` is the client's current round-trip estimate in ms
 (`0`–`60000`), sent once it has one. The server uses it to choose the lead
@@ -80,17 +85,17 @@ for scheduled starts.
 
 ## Server → client
 
-| `type`     | Fields                                                 | Meaning                                                                                                                                           |
-| ---------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `welcome`  | `clientId`, `roomId`, `serverTime`, `state`, `members` | Reply to `join`: full snapshot for a new, late or reconnecting client.                                                                            |
-| `state`    | `state`, `cause`                                       | Broadcast after every applied intent. `cause` is `{ "action": "play" \| "pause" \| "seek" \| "rate" \| "media" \| "buffering", "by": clientId }`. |
-| `presence` | `members`                                              | The member list changed (someone joined, left, or started or stopped buffering).                                                                  |
-| `pong`     | `clientTime`, `serverTime`                             | Reply to `ping`: echoes `clientTime`; `serverTime` is server time when replying.                                                                  |
-| `chat`     | `from`, `name`, `text`, `sentAt`                       | A member's chat message (see Chat below).                                                                                                         |
-| `error`    | `code`, `message`                                      | `code` is one of `bad_message`, `unsupported_version`, `room_full`, `not_joined`.                                                                 |
+| `type`     | Fields                                                 | Meaning                                                                                                                                                        |
+| ---------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `welcome`  | `clientId`, `roomId`, `serverTime`, `state`, `members` | Reply to `join`: full snapshot for a new, late or reconnecting client.                                                                                         |
+| `state`    | `state`, `cause`                                       | Broadcast after every applied intent. `cause` is `{ "action": "play" \| "pause" \| "seek" \| "rate" \| "media" \| "buffering" \| "control", "by": clientId }`. |
+| `presence` | `members`                                              | The member list changed (someone joined, left, or started or stopped buffering).                                                                               |
+| `pong`     | `clientTime`, `serverTime`                             | Reply to `ping`: echoes `clientTime`; `serverTime` is server time when replying.                                                                               |
+| `chat`     | `from`, `name`, `text`, `sentAt`                       | A member's chat message (see Chat below).                                                                                                                      |
+| `error`    | `code`, `message`                                      | `code` is one of `bad_message`, `unsupported_version`, `room_full`, `not_joined`, `not_host`.                                                                  |
 
-A member is `{ "clientId": "...", "name": "...", "buffering": true }`;
-`buffering` is left out when false.
+A member is `{ "clientId": "...", "name": "...", "buffering": true, "host": true }`;
+`buffering` and `host` are left out when false.
 
 ## Playback speed
 
@@ -138,9 +143,25 @@ as a `chat` with the sender's `clientId` (`from`), their name at the time, and
 rejoining) gets them right after `welcome`, oldest first. History lives in
 memory only and is lost when the server restarts.
 
-## Not in this draft
+## Host-only rooms
 
-Host-only mode. It is planned as a later message type.
+Every room has one host: the first member to join. When the host leaves, the
+member who has been in the room longest becomes host (shown with `host` in the
+next `presence`); the first member to join an emptied room becomes its host.
+
+The host sends `control` with `hostOnly: true` to make the room host-only. The
+server sets `hostOnly` in the room state, bumps `version` and broadcasts it
+with cause `control`; playback itself doesn't change. Sending the mode the
+room already has changes nothing and isn't broadcast. A `control` from anyone
+else is refused with `not_host`.
+
+While the room is host-only, a `play`, `pause`, `seek`, `rate` or `media` from
+anyone but the host is refused with `not_host` and changes nothing. Clients
+undo the change locally rather than send it; one that sent it anyway (say,
+just before the mode changed) goes back to the room's state. Buffering still
+pauses and resumes the room for everyone, and anyone can chat.
+
+## Other rules
 
 A connection joins one room; a second `join` on it is a `bad_message`. Sending
 `play`, `pause` or `seek` before joining is `not_joined`. A room holds up to 16

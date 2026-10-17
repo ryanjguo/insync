@@ -306,6 +306,60 @@ describe("PlayerSync", () => {
     expect(sent).toEqual([]);
   });
 
+  describe("host-only rooms", () => {
+    let control: boolean;
+    beforeEach(() => {
+      control = false;
+      sync.dispose();
+      sync = new PlayerSync(media, {
+        now: () => local,
+        serverNow: () => now,
+        send: (i) => sent.push(i),
+        setTimer: (fn) => timers.push(fn),
+        canControl: () => control,
+      });
+    });
+
+    it("undoes a play, pause or seek instead of sending it", () => {
+      sync.apply(state({ position: 20, updatedAt: now, version: 3 }));
+      media.userPlay();
+      expect(media.paused).toBe(true);
+      media.userSeek(90);
+      expect(media.currentTime).toBe(20);
+
+      sync.apply(
+        state({ playing: true, position: 20, updatedAt: now, version: 4 }),
+      );
+      media.userPause();
+      expect(media.paused).toBe(false);
+      expect(sent).toEqual([]);
+    });
+
+    it("undoes a speed change instead of sending it", () => {
+      sync.apply(state({ version: 3 }));
+      media.userRate(2);
+      expect(media.playbackRate).toBe(1);
+      expect(sent).toEqual([]);
+    });
+
+    it("sends again once the user may control the room", () => {
+      sync.apply(state({ version: 3 }));
+      control = true;
+      media.userSeek(42);
+      expect(sent).toEqual([{ type: "seek", baseVersion: 3, position: 42 }]);
+    });
+
+    it("goes back to the room's state after a refused change", () => {
+      control = true;
+      const room = state({ position: 20, updatedAt: now, version: 3 });
+      sync.apply(room);
+      media.userSeek(90);
+      // The server refused it: the same state comes back.
+      sync.apply(room);
+      expect(media.currentTime).toBe(20);
+    });
+  });
+
   describe("a fresh room", () => {
     it("starts from where this video already is instead of going back to 0:00", () => {
       media.currentTime = 754;

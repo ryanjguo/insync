@@ -141,9 +141,11 @@ func TestDecodeDetails(t *testing.T) {
 		{name: "chat too long", in: `{"type":"chat","text":"` + strings.Repeat("🍿", 501) + `"}`, wantErr: "message.text must be 1-500 characters"},
 		{name: "not JSON", in: `{nope`, wantErr: "message must be a JSON object"},
 		{name: "missing field", in: `{"type":"seek","baseVersion":0}`, wantErr: "message.position is required"},
+		{name: "control", in: `{"type":"control","hostOnly":true}`, want: Control{HostOnly: true}},
+		{name: "control needs hostOnly", in: `{"type":"control"}`, wantErr: "message.hostOnly is required"},
 		{name: "unknown type", in: `{"type":"rewind"}`, wantErr: `unknown client message type "rewind"`},
 		{name: "nested path", server: true, in: `{"type":"presence","members":[{"clientId":"abcd","name":""}]}`, wantErr: "message.members[0].name must be 1-32 characters"},
-		{name: "cause path", server: true, in: `{"type":"state","state":{"mediaUrl":"","playing":false,"position":0,"updatedAt":0,"rate":1,"version":1},"cause":{"action":"rewind","by":"abcd"}}`, wantErr: "message.cause.action must be play, pause, seek, rate, media or buffering"},
+		{name: "cause path", server: true, in: `{"type":"state","state":{"mediaUrl":"","playing":false,"position":0,"updatedAt":0,"rate":1,"version":1},"cause":{"action":"rewind","by":"abcd"}}`, wantErr: "message.cause.action must be play, pause, seek, rate, media, buffering or control"},
 		{name: "media URL scheme", in: `{"type":"media","baseVersion":0,"mediaUrl":"file:///etc/passwd"}`, wantErr: "message.mediaUrl must be an http(s) URL"},
 		{name: "state path", server: true, in: `{"type":"state","state":{"mediaUrl":"","playing":false,"position":0,"updatedAt":0,"rate":9,"version":1},"cause":{"action":"play","by":"abcd"}}`, wantErr: "message.state.rate must be between 0.25 and 4"},
 	}

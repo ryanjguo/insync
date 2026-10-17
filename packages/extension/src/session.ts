@@ -44,6 +44,23 @@ export interface SessionSnapshot {
   joins: number;
   /** Recent chat, oldest first. */
   chat: ChatLineMessage[];
+  /**
+   * Counts changes the server refused because the room is host-only. The
+   * player had already assumed the change, so a new count means it should
+   * go back to the room's state.
+   */
+  refused: number;
+}
+
+/** Whether this member may play, pause, seek, change speed or switch video. */
+export function canControl(s: SessionSnapshot): boolean {
+  if (!s.state?.hostOnly) return true;
+  return s.members.some((m) => m.clientId === s.clientId && m.host === true);
+}
+
+/** Whether this member is the room's host. */
+export function isHost(s: SessionSnapshot): boolean {
+  return s.members.some((m) => m.clientId === s.clientId && m.host === true);
 }
 
 export interface SessionOptions {
@@ -128,6 +145,7 @@ export class RoomSession {
       error: null,
       joins: 0,
       chat: [],
+      refused: 0,
     };
     this.lastHeard = this.now();
     this.socket = this.connect();
@@ -215,6 +233,11 @@ export class RoomSession {
     };
     if (this.snap.status === "joined") this.send(msg);
     else if (this.snap.status === "reconnecting") this.queued.media = msg;
+  }
+
+  /** Turn host-only mode on or off (only the host may). */
+  setHostOnly(hostOnly: boolean): void {
+    if (this.snap.status === "joined") this.send({ type: "control", hostOnly });
   }
 
   /** Send a chat message to the room. Returns false when not connected. */
@@ -323,7 +346,11 @@ export class RoomSession {
         break;
       }
       case "error":
-        this.update({ error: msg.message });
+        // Refused for not being the host: not worth showing (the popup says
+        // who controls playback), but the player must undo what it assumed.
+        if (msg.code === "not_host")
+          this.update({ refused: this.snap.refused + 1 });
+        else this.update({ error: msg.message });
         break;
     }
   }
