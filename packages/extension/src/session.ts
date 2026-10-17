@@ -125,6 +125,8 @@ export class RoomSession {
   private closed = false;
   /** Whether this tab's video is stalled loading, as last told by setBuffering. */
   private buffering = false;
+  /** This tab's video length, as last told by setDuration. */
+  private duration = 0;
   /** Sent after rejoining: what the user did while disconnected. */
   private queued: {
     intent?: IntentMessage;
@@ -165,6 +167,8 @@ export class RoomSession {
       // A rejoining member keeps its old flag on the server, which may be stale.
       if (this.buffering || this.snap.clientId)
         this.send({ type: "buffering", buffering: this.buffering });
+      if (this.duration > 0 || this.snap.clientId)
+        this.send({ type: "duration", duration: this.duration });
       const { intent, rate, media } = this.queued;
       this.queued = {};
       if (media) this.send(media);
@@ -233,6 +237,14 @@ export class RoomSession {
     };
     if (this.snap.status === "joined") this.send(msg);
     else if (this.snap.status === "reconnecting") this.queued.media = msg;
+  }
+
+  /** Tell the room how long this tab's video is, in seconds (0 when unknown). */
+  setDuration(duration: number): void {
+    if (duration === this.duration) return;
+    this.duration = duration;
+    if (this.snap.status === "joined")
+      this.send({ type: "duration", duration });
   }
 
   /** Turn host-only mode on or off (only the host may). */

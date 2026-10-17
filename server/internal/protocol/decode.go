@@ -60,6 +60,8 @@ func DecodeClientMessage(data []byte) (ClientMessage, error) {
 		msg = Chat{Text: r.chatText("text")}
 	case TypeControl:
 		msg = Control{HostOnly: r.boolean("hostOnly")}
+	case TypeDuration:
+		msg = Duration{Duration: r.duration("duration")}
 	default:
 		return nil, fmt.Errorf("unknown client message type %q", typ)
 	}
@@ -202,6 +204,15 @@ func (r *reader) rtt(key string) float64 {
 	return v
 }
 
+// duration reads a video length in seconds: 0 (unknown) to MaxDurationSec.
+func (r *reader) duration(key string) float64 {
+	v := r.float(key)
+	if r.err == nil && (v < 0 || v > MaxDurationSec) {
+		r.fail(key, "must be between 0 and %d", MaxDurationSec)
+	}
+	return v
+}
+
 func (r *reader) str(key string) string {
 	var v string
 	r.decode(key, "a string", &v)
@@ -313,6 +324,9 @@ func (r *reader) members(key string) []Member {
 		}
 		if m.has("host") {
 			member.Host = m.boolean("host")
+		}
+		if m.has("duration") {
+			member.Duration = m.duration("duration")
 		}
 		out = append(out, member)
 		r.sub(m)

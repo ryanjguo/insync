@@ -1101,5 +1101,83 @@
       "code": "not_host",
       "message": "only the host can control playback"
     }
+  },
+  {
+    "name": "duration",
+    "direction": "client",
+    "valid": true,
+    "message": {
+      "type": "duration",
+      "duration": 5421.3
+    }
+  },
+  {
+    "name": "duration unknown",
+    "direction": "client",
+    "valid": true,
+    "message": {
+      "type": "duration",
+      "duration": 0
+    }
+  },
+  {
+    "name": "duration negative",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "duration",
+      "duration": -1
+    }
+  },
+  {
+    "name": "duration too long",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "duration",
+      "duration": 1000001
+    }
+  },
+  {
+    "name": "duration missing",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "duration"
+    }
+  },
+  {
+    "name": "presence with video lengths",
+    "direction": "server",
+    "valid": true,
+    "message": {
+      "type": "presence",
+      "members": [
+        {
+          "clientId": "abcd",
+          "name": "Ryan",
+          "duration": 5421.3
+        },
+        {
+          "clientId": "efgh",
+          "name": "Sam"
+        }
+      ]
+    }
+  },
+  {
+    "name": "presence duration not a number",
+    "direction": "server",
+    "valid": false,
+    "message": {
+      "type": "presence",
+      "members": [
+        {
+          "clientId": "abcd",
+          "name": "Ryan",
+          "duration": "1:30:21"
+        }
+      ]
+    }
   }
 ]

@@ -112,6 +112,13 @@ in each. Reload any tab that was already open before the extension loaded.
 - **Not supported yet:** Netflix, Disney+ and other DRM sites, which use custom
   players that fight outside control and would need a per-site adapter.
 
+### Watching the same thing
+
+Every tab tells the room how long its video is. If two people's videos differ
+by more than 2 seconds (another episode, a version with a different intro, a
+trailer), the popup warns and lists everyone's length, so you can check you're
+on the same thing before pressing play.
+
 ### Host-only rooms
 
 Whoever joins a room first is its host, marked "(host)" in the popup's member
@@ -183,7 +190,8 @@ npm run format     # apply Prettier
 page with a `<video>`, and opens two tabs of a real Chromium with the
 extension loaded. Both join one room through an invite link, and the test
 checks that play, pause, seek and speed changes in one tab show up in the
-other, and that in a host-only room only the host's changes do. It needs Go and a Playwright Chromium: run
+other, that in a host-only room only the host's changes do, and that each
+tab's video length reaches the room. It needs Go and a Playwright Chromium: run
 `npx playwright install chromium` once, or point `CHROMIUM_PATH` at a
 Chromium you already have.
 
@@ -269,5 +277,5 @@ Lag spike, back in sync after the stall ended: 1.2 s, 0.3 s, 0.3 s, 1.7 s, 0.3 s
 5. Measure and ship: ~~network-impairment harness~~, ~~results table~~,
    deploy (configs ready, not live yet)
 
-Since then: host-only rooms. Next:
-[warning when videos differ in length](https://github.com/ryanjguo/insync/issues/37).
+Since then: host-only rooms, and a warning when people's videos differ in
+length.

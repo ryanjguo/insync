@@ -143,6 +143,8 @@ func TestDecodeDetails(t *testing.T) {
 		{name: "missing field", in: `{"type":"seek","baseVersion":0}`, wantErr: "message.position is required"},
 		{name: "control", in: `{"type":"control","hostOnly":true}`, want: Control{HostOnly: true}},
 		{name: "control needs hostOnly", in: `{"type":"control"}`, wantErr: "message.hostOnly is required"},
+		{name: "duration", in: `{"type":"duration","duration":5421.3}`, want: Duration{Duration: 5421.3}},
+		{name: "duration negative", in: `{"type":"duration","duration":-1}`, wantErr: "message.duration must be between 0 and 1000000"},
 		{name: "unknown type", in: `{"type":"rewind"}`, wantErr: `unknown client message type "rewind"`},
 		{name: "nested path", server: true, in: `{"type":"presence","members":[{"clientId":"abcd","name":""}]}`, wantErr: "message.members[0].name must be 1-32 characters"},
 		{name: "cause path", server: true, in: `{"type":"state","state":{"mediaUrl":"","playing":false,"position":0,"updatedAt":0,"rate":1,"version":1},"cause":{"action":"rewind","by":"abcd"}}`, wantErr: "message.cause.action must be play, pause, seek, rate, media, buffering or control"},

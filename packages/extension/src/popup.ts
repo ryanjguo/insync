@@ -1,5 +1,6 @@
 import type { ChatLineMessage } from "@wps/protocol";
 import { DEFAULT_SERVER, inviteLink } from "./invite";
+import { lengthWarning } from "./lengths";
 import { canControl, isHost } from "./session";
 import {
   DEBUG_OVERLAY_KEY,
@@ -97,6 +98,9 @@ function render(s: TabStatus): void {
           })
           .join(", ")}`
       : "";
+  $("length-note").textContent = joined
+    ? (lengthWarning(session.members, session.clientId) ?? "")
+    : "";
   const host = isHost(session);
   const hostOnly = session.state?.hostOnly === true;
   hostOnlyInput.checked = hostOnly;

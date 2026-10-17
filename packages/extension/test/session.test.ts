@@ -270,6 +270,23 @@ describe("RoomSession", () => {
     expect(session.snapshot.error).toBeNull();
   });
 
+  it("tells the room its video length once joined, and again after reconnecting", () => {
+    session.setDuration(5400);
+    socket.onopen?.(new Event("open"));
+    expect(socket.sent).toContainEqual({ type: "duration", duration: 5400 });
+    welcome();
+    socket.sent = [];
+    session.setDuration(5400);
+    expect(socket.sent).toEqual([]);
+    session.setDuration(5280.5);
+    expect(socket.sent).toEqual([{ type: "duration", duration: 5280.5 }]);
+
+    socket.onclose?.({} as CloseEvent);
+    timers.splice(0).forEach((t) => t.fn());
+    socket.onopen?.(new Event("open"));
+    expect(socket.sent).toContainEqual({ type: "duration", duration: 5280.5 });
+  });
+
   it("asks to turn host-only mode on once joined", () => {
     session.setHostOnly(true);
     welcome();
@@ -372,6 +389,7 @@ describe("RoomSession", () => {
       expect(socket.sentTypes()).toEqual([
         "join",
         "buffering",
+        "duration",
         "media",
         "seek",
         "rate",

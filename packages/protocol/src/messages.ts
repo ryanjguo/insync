@@ -14,6 +14,9 @@ export const MAX_CHAT = 500;
 /** Largest round trip a ping may report, in ms. */
 export const MAX_RTT_MS = 60_000;
 
+/** Longest video length a client may report, in seconds. */
+export const MAX_DURATION_SEC = 1_000_000;
+
 /** Authoritative playback state of a room, owned by the server (Go: room.State). */
 export interface RoomState {
   /** What's being watched. Empty until someone sets it. */
@@ -37,6 +40,8 @@ export interface Member {
   buffering?: boolean;
   /** True for the room's host, who alone controls playback in host-only mode. Absent means false. */
   host?: boolean;
+  /** Length of the member's video in seconds. Absent when unknown. */
+  duration?: number;
 }
 
 // Client -> server
@@ -109,6 +114,15 @@ export interface ChatMessage {
   text: string;
 }
 
+/**
+ * How long this client's video is, in seconds: 0 when unknown (not loaded
+ * yet, a live stream, or not on the room's video).
+ */
+export interface DurationMessage {
+  type: "duration";
+  duration: number;
+}
+
 /** Turn host-only mode on or off. Only the host may send it. */
 export interface ControlModeMessage {
   type: "control";
@@ -126,7 +140,8 @@ export type ClientMessage =
   | PingMessage
   | BufferingMessage
   | ChatMessage
-  | ControlModeMessage;
+  | ControlModeMessage
+  | DurationMessage;
 export type ClientMessageType = ClientMessage["type"];
 
 // Server -> client

@@ -555,3 +555,30 @@ func TestHostOnly(t *testing.T) {
 		t.Fatal("want host-only off")
 	}
 }
+
+func TestSetDuration(t *testing.T) {
+	r := New("room")
+	alice, bob := &recorder{}, &recorder{}
+	_ = r.Join("alice", "Alice", alice, 0)
+	_ = r.Join("bob", "Bob", bob, 0)
+
+	r.SetDuration("bob", 5400)
+	mc, ok := alice.last().(MembersChanged)
+	want := []Member{{ClientID: "alice", Name: "Alice", Host: true}, {ClientID: "bob", Name: "Bob", Duration: 5400}}
+	if !ok || !slices.Equal(mc.Members, want) {
+		t.Fatalf("alice got %+v, want bob's video length", alice.last())
+	}
+
+	n := len(alice.events)
+	r.SetDuration("bob", 5400)
+	r.SetDuration("nobody", 10)
+	if len(alice.events) != n {
+		t.Fatal("want an unchanged length, or a non-member's, to send nothing")
+	}
+
+	// A reconnect keeps the length until the member reports again.
+	_ = r.Join("bob", "Bob", &recorder{}, 0)
+	if got := r.Members()[1].Duration; got != 5400 {
+		t.Fatalf("duration after rejoining = %v, want 5400", got)
+	}
+}

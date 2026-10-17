@@ -397,3 +397,23 @@ func TestHostOnly(t *testing.T) {
 		}
 	}
 }
+
+// TestDuration: each member's video length reaches the others in presence.
+func TestDuration(t *testing.T) {
+	ts := newTestServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	alice, bob := dial(ctx, t, ts), dial(ctx, t, ts)
+
+	send(ctx, t, alice, `{"type":"join","protocolVersion":1,"roomId":"movie-night","name":"Alice","clientId":"alice-1"}`)
+	recv(ctx, t, alice)
+	send(ctx, t, bob, `{"type":"join","protocolVersion":1,"roomId":"movie-night","name":"Bob","clientId":"bob-1"}`)
+	recv(ctx, t, bob)
+	recv(ctx, t, alice) // presence
+
+	send(ctx, t, bob, `{"type":"duration","duration":5400.5}`)
+	p, ok := recv(ctx, t, alice).(protocol.Presence)
+	if !ok || len(p.Members) != 2 || p.Members[0].Duration != 0 || p.Members[1].Duration != 5400.5 {
+		t.Fatalf("alice: got %+v, want bob's video length", p)
+	}
+}
