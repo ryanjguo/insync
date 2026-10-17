@@ -58,6 +58,8 @@ func DecodeClientMessage(data []byte) (ClientMessage, error) {
 		msg = Buffering{Buffering: r.boolean("buffering")}
 	case TypeChat:
 		msg = Chat{Text: r.chatText("text")}
+	case TypeControl:
+		msg = Control{HostOnly: r.boolean("hostOnly")}
 	default:
 		return nil, fmt.Errorf("unknown client message type %q", typ)
 	}
@@ -89,9 +91,9 @@ func DecodeServerMessage(data []byte) (ServerMessage, error) {
 		if cause != nil {
 			m.Cause = Cause{Action: cause.str("action"), By: cause.id("by")}
 			switch m.Cause.Action {
-			case TypePlay, TypePause, TypeSeek, TypeRate, TypeMedia, TypeBuffering:
+			case TypePlay, TypePause, TypeSeek, TypeRate, TypeMedia, TypeBuffering, TypeControl:
 			default:
-				cause.fail("action", "must be play, pause, seek, rate, media or buffering")
+				cause.fail("action", "must be play, pause, seek, rate, media, buffering or control")
 			}
 			r.sub(cause)
 		}
@@ -281,6 +283,9 @@ func (r *reader) roomState(key string) RoomState {
 		Rate:      o.float("rate"),
 		Version:   uint64(o.int("version", 0)),
 	}
+	if o.has("hostOnly") {
+		s.HostOnly = o.boolean("hostOnly")
+	}
 	if o.err == nil && (s.Rate < MinRate || s.Rate > MaxRate) {
 		o.fail("rate", "must be between %g and %g", MinRate, MaxRate)
 	}
@@ -305,6 +310,9 @@ func (r *reader) members(key string) []Member {
 		member := Member{ClientID: m.id("clientId"), Name: m.name("name")}
 		if m.has("buffering") {
 			member.Buffering = m.boolean("buffering")
+		}
+		if m.has("host") {
+			member.Host = m.boolean("host")
 		}
 		out = append(out, member)
 		r.sub(m)

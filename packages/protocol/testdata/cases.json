@@ -1008,5 +1008,98 @@
       "baseVersion": 3,
       "position": 12.5
     }
+  },
+  {
+    "name": "control",
+    "direction": "client",
+    "valid": true,
+    "message": {
+      "type": "control",
+      "hostOnly": true
+    }
+  },
+  {
+    "name": "control missing hostOnly",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "control"
+    }
+  },
+  {
+    "name": "control hostOnly not a boolean",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "control",
+      "hostOnly": "yes"
+    }
+  },
+  {
+    "name": "state turning host-only on",
+    "direction": "server",
+    "valid": true,
+    "message": {
+      "type": "state",
+      "state": {
+        "mediaUrl": "",
+        "playing": false,
+        "position": 0,
+        "updatedAt": 0,
+        "rate": 1,
+        "version": 2,
+        "hostOnly": true
+      },
+      "cause": {
+        "action": "control",
+        "by": "abcd"
+      }
+    }
+  },
+  {
+    "name": "state hostOnly not a boolean",
+    "direction": "server",
+    "valid": false,
+    "message": {
+      "type": "state",
+      "state": {
+        "mediaUrl": "",
+        "playing": false,
+        "position": 0,
+        "updatedAt": 0,
+        "rate": 1,
+        "version": 2,
+        "hostOnly": 1
+      },
+      "cause": {
+        "action": "control",
+        "by": "abcd"
+      }
+    }
+  },
+  {
+    "name": "presence with a host",
+    "direction": "server",
+    "valid": true,
+    "message": {
+      "type": "presence",
+      "members": [
+        {
+          "clientId": "abcd",
+          "name": "Ryan",
+          "host": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "error not_host",
+    "direction": "server",
+    "valid": true,
+    "message": {
+      "type": "error",
+      "code": "not_host",
+      "message": "only the host can control playback"
+    }
   }
 ]

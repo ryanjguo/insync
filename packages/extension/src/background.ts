@@ -14,7 +14,7 @@ import {
   type RoomUpdate,
   type TabStatus,
 } from "./messages";
-import { RoomSession, type SessionSnapshot } from "./session";
+import { RoomSession, canControl, type SessionSnapshot } from "./session";
 
 /** Keepalive and clock-resync interval. A WebSocket message every 20 s also keeps the service worker alive. */
 const PING_INTERVAL_MS = 20_000;
@@ -55,7 +55,11 @@ function tab(id: number): Tab {
         navigate: (url) => {
           chrome.tabs.update(id, { url }).catch(() => {});
         },
-        announce: (url) => entry.session?.sendMedia(url),
+        // A tab that can't switch the room's video just sits out on its own.
+        announce: (url) => {
+          const s = entry.session;
+          if (s && canControl(s.snapshot)) s.sendMedia(url);
+        },
       }),
     };
     t = entry;
@@ -79,6 +83,8 @@ function roomUpdate(t: Tab): RoomUpdate {
     offsetMs: s?.offsetMs ?? 0,
     rttMs: s?.rttMs ?? null,
     joins: s?.joins ?? 0,
+    canControl: s ? canControl(s) : true,
+    refused: s?.refused ?? 0,
   };
 }
 
@@ -91,7 +97,9 @@ function push(t: Tab): void {
     last.state === update.state &&
     last.offsetMs === update.offsetMs &&
     last.rttMs === update.rttMs &&
-    last.joins === update.joins
+    last.joins === update.joins &&
+    last.canControl === update.canControl &&
+    last.refused === update.refused
   )
     return;
   t.sent = update;
@@ -243,6 +251,8 @@ chrome.runtime.onMessage.addListener(
     if (req.kind === "join") join(req.tabId, req);
     else if (req.kind === "leave") leave(tab(req.tabId));
     else if (req.kind === "chat") tab(req.tabId).session?.sendChat(req.text);
+    else if (req.kind === "hostOnly")
+      tab(req.tabId).session?.setHostOnly(req.on);
     reply(status(req.tabId));
   },
 );

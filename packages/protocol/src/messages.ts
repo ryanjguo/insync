@@ -26,6 +26,8 @@ export interface RoomState {
   rate: number;
   /** Bumped on every applied change. */
   version: number;
+  /** True when only the host may play, pause, seek, change speed or switch video. Absent means false. */
+  hostOnly?: boolean;
 }
 
 export interface Member {
@@ -33,6 +35,8 @@ export interface Member {
   name: string;
   /** True while the member's video is stalled loading. Absent means false. */
   buffering?: boolean;
+  /** True for the room's host, who alone controls playback in host-only mode. Absent means false. */
+  host?: boolean;
 }
 
 // Client -> server
@@ -105,6 +109,12 @@ export interface ChatMessage {
   text: string;
 }
 
+/** Turn host-only mode on or off. Only the host may send it. */
+export interface ControlModeMessage {
+  type: "control";
+  hostOnly: boolean;
+}
+
 export type IntentMessage = PlayMessage | PauseMessage | SeekMessage;
 /** Anything a player sends to steer the room: an intent or a speed change. */
 export type ControlMessage = IntentMessage | RateMessage;
@@ -115,7 +125,8 @@ export type ClientMessage =
   | MediaMessage
   | PingMessage
   | BufferingMessage
-  | ChatMessage;
+  | ChatMessage
+  | ControlModeMessage;
 export type ClientMessageType = ClientMessage["type"];
 
 // Server -> client
@@ -133,13 +144,15 @@ export type IntentAction = IntentMessage["type"];
 
 /**
  * What changed the room: a play, pause or seek, a speed change, a switch of
- * video, or the room pausing for (or resuming after) someone buffering.
+ * video, the room pausing for (or resuming after) someone buffering, or
+ * host-only mode turning on or off.
  */
 export type StateCause =
   | IntentAction
   | RateMessage["type"]
   | MediaMessage["type"]
-  | BufferingMessage["type"];
+  | BufferingMessage["type"]
+  | ControlModeMessage["type"];
 
 export interface StateMessage {
   type: "state";
@@ -177,6 +190,7 @@ export const ERROR_CODES = [
   "unsupported_version",
   "room_full",
   "not_joined",
+  "not_host",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 

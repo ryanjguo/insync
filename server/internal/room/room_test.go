@@ -190,7 +190,7 @@ func TestJoinAndBroadcast(t *testing.T) {
 	if err := r.Join("bob", "Bob", bob, 2000); err != nil {
 		t.Fatal(err)
 	}
-	want := []Member{{ClientID: "alice", Name: "Alice"}, {ClientID: "bob", Name: "Bob"}}
+	want := []Member{{ClientID: "alice", Name: "Alice", Host: true}, {ClientID: "bob", Name: "Bob"}}
 	if mc, ok := alice.last().(MembersChanged); !ok || !slices.Equal(mc.Members, want) {
 		t.Fatalf("alice got %+v, want MembersChanged %v", alice.last(), want)
 	}
@@ -320,7 +320,7 @@ func TestBufferingPausesAndResumes(t *testing.T) {
 	if sc.Action != Buffer || sc.By != "bob" || sc.State.Playing || sc.State.Position != 12 || sc.State.Version != 2 {
 		t.Fatalf("got %+v, want a pause at 12 for bob's buffering", sc)
 	}
-	wantMembers := []Member{{ClientID: "alice", Name: "Alice"}, {ClientID: "bob", Name: "Bob", Buffering: true}}
+	wantMembers := []Member{{ClientID: "alice", Name: "Alice", Host: true}, {ClientID: "bob", Name: "Bob", Buffering: true}}
 	if got := r.Members(); !slices.Equal(got, wantMembers) {
 		t.Fatalf("members = %+v, want bob shown as buffering", got)
 	}
@@ -495,5 +495,63 @@ func TestSetPlaybackRate(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestHost(t *testing.T) {
+	r := New("room")
+	alice, bob, carol := &recorder{}, &recorder{}, &recorder{}
+	_ = r.Join("alice", "Alice", alice, 0)
+	_ = r.Join("bob", "Bob", bob, 0)
+	_ = r.Join("carol", "Carol", carol, 0)
+	if !r.IsHost("alice") || r.IsHost("bob") {
+		t.Fatal("want the first member to join as host")
+	}
+
+	r.Leave("alice", alice, 0)
+	if !r.IsHost("bob") {
+		t.Fatal("want the host handed to the longest-standing member when the host leaves")
+	}
+	mc, ok := carol.last().(MembersChanged)
+	if !ok || !slices.Equal(mc.Members, []Member{{ClientID: "bob", Name: "Bob", Host: true}, {ClientID: "carol", Name: "Carol"}}) {
+		t.Fatalf("carol got %+v, want bob shown as host", carol.last())
+	}
+
+	r.Leave("carol", carol, 0)
+	r.Leave("bob", bob, 0)
+	_ = r.Join("dave", "Dave", &recorder{}, 0)
+	if !r.IsHost("dave") {
+		t.Fatal("want the first member into an emptied room as host")
+	}
+}
+
+func TestHostOnly(t *testing.T) {
+	r, alice, bob := playingRoom(t)
+	if !r.Controls("bob") {
+		t.Fatal("want anyone in control by default")
+	}
+
+	s := r.SetHostOnly(true, "alice")
+	if !s.HostOnly || s.Version != 2 || !s.Playing || s.Position != 10 || s.UpdatedAt != 1000 {
+		t.Fatalf("got %+v, want host-only on with playback untouched", s)
+	}
+	if sc := lastState(t, bob); sc.Action != Control || sc.By != "alice" || !sc.State.HostOnly {
+		t.Fatalf("bob got %+v, want the switch broadcast", sc)
+	}
+	if !r.Controls("alice") || r.Controls("bob") {
+		t.Fatal("want only the host in control")
+	}
+
+	n := len(alice.events)
+	if s := r.SetHostOnly(true, "alice"); s.Version != 2 || len(alice.events) != n {
+		t.Fatal("want setting the same mode to change nothing")
+	}
+
+	r.Leave("alice", alice, 0)
+	if !r.Controls("bob") {
+		t.Fatal("want the new host in control")
+	}
+	if s := r.SetHostOnly(false, "bob"); s.HostOnly {
+		t.Fatal("want host-only off")
 	}
 }

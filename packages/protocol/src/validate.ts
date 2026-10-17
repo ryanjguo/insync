@@ -121,6 +121,9 @@ function roomState(v: unknown, path: string): RoomState {
     updatedAt: integer(o, "updatedAt", path),
     rate,
     version: integer(o, "version", path, 0),
+    ...(o.hostOnly !== undefined && o.hostOnly !== null
+      ? { hostOnly: boolean(o, "hostOnly", path) }
+      : {}),
   };
 }
 
@@ -136,6 +139,8 @@ function members(o: Obj, key: string, path: string): Member[] {
     };
     if (m.buffering !== undefined && m.buffering !== null)
       member.buffering = boolean(m, "buffering", p);
+    if (m.host !== undefined && m.host !== null)
+      member.host = boolean(m, "host", p);
     return member;
   });
 }
@@ -221,6 +226,8 @@ export function parseClientMessage(raw: unknown): ParseResult<ClientMessage> {
         return { type: "buffering", buffering: boolean(o, "buffering", p) };
       case "chat":
         return { type: "chat", text: chatText(o, "text", p) };
+      case "control":
+        return { type: "control", hostOnly: boolean(o, "hostOnly", p) };
       default:
         return fail(`unknown client message type "${o.type}"`);
     }
@@ -234,6 +241,7 @@ const CAUSES: readonly StateCause[] = [
   "rate",
   "media",
   "buffering",
+  "control",
 ];
 
 /** Validates a message sent by the server. Accepts a JSON string or an already-parsed value. */
@@ -256,7 +264,7 @@ export function parseServerMessage(raw: unknown): ParseResult<ServerMessage> {
         const action = string(cause, "action", `${p}.cause`);
         if (!CAUSES.includes(action as StateCause))
           fail(
-            `${p}.cause.action must be play, pause, seek, rate, media or buffering`,
+            `${p}.cause.action must be play, pause, seek, rate, media, buffering or control`,
           );
         return {
           type: "state",

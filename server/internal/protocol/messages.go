@@ -40,6 +40,8 @@ const (
 	TypeBuffering = "buffering"
 	// TypeChat is a chat message, sent by a client and relayed by the server.
 	TypeChat = "chat"
+	// TypeControl turns host-only mode on or off. It is also a StateUpdate cause.
+	TypeControl = "control"
 
 	TypeWelcome  = "welcome"
 	TypeState    = "state"
@@ -54,10 +56,11 @@ const (
 	ErrUnsupportedVersion = "unsupported_version"
 	ErrRoomFull           = "room_full"
 	ErrNotJoined          = "not_joined"
+	ErrNotHost            = "not_host"
 )
 
 var errorCodes = map[string]bool{
-	ErrBadMessage: true, ErrUnsupportedVersion: true, ErrRoomFull: true, ErrNotJoined: true,
+	ErrBadMessage: true, ErrUnsupportedVersion: true, ErrRoomFull: true, ErrNotJoined: true, ErrNotHost: true,
 }
 
 // RoomState is the room's playback state as sent on the wire.
@@ -69,6 +72,8 @@ type Member struct {
 	Name     string `json:"name"`
 	// Buffering is true while the member's video is stalled loading.
 	Buffering bool `json:"buffering,omitempty"`
+	// Host is true for the room's host, who alone controls playback in host-only mode.
+	Host bool `json:"host,omitempty"`
 }
 
 // ClientMessage is any message a client sends to the server.
@@ -127,6 +132,11 @@ type Chat struct {
 	Text string `json:"text"`
 }
 
+// Control turns host-only mode on or off. Only the host may send it.
+type Control struct {
+	HostOnly bool `json:"hostOnly"`
+}
+
 // ClientType implements ClientMessage.
 func (Join) ClientType() string { return TypeJoin }
 
@@ -148,6 +158,9 @@ func (Buffering) ClientType() string { return TypeBuffering }
 // ClientType implements ClientMessage.
 func (Chat) ClientType() string { return TypeChat }
 
+// ClientType implements ClientMessage.
+func (Control) ClientType() string { return TypeControl }
+
 // Server -> client.
 
 // Welcome answers Join with a full snapshot for a new, late or reconnecting client.
@@ -159,8 +172,8 @@ type Welcome struct {
 	Members    []Member  `json:"members"`
 }
 
-// Cause says what produced a StateUpdate (play, pause, seek, media or
-// buffering) and which client caused it.
+// Cause says what produced a StateUpdate (play, pause, seek, rate, media,
+// buffering or control) and which client caused it.
 type Cause struct {
 	Action string `json:"action"`
 	By     string `json:"by"`
@@ -279,6 +292,12 @@ func (m Buffering) MarshalJSON() ([]byte, error) {
 func (m Chat) MarshalJSON() ([]byte, error) {
 	type wire Chat
 	return marshalTyped(TypeChat, wire(m))
+}
+
+// MarshalJSON adds the "type" field.
+func (m Control) MarshalJSON() ([]byte, error) {
+	type wire Control
+	return marshalTyped(TypeControl, wire(m))
 }
 
 // MarshalJSON adds the "type" field.

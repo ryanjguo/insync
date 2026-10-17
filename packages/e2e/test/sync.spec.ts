@@ -1,7 +1,7 @@
 // End to end: the built extension in a real Chromium, against the real Go
 // server, on a page with a <video>. Two tabs join one room through an invite
 // link, and playing, pausing, seeking and changing speed in one shows up in
-// the other.
+// the other. In a host-only room, only the host's changes do.
 
 import {
   chromium,
@@ -161,11 +161,11 @@ function control(page: Page, action: Action): Promise<void> {
 }
 
 /**
- * How many tabs the extension has joined to a room, asked through the same
+ * How many tabs the extension has joined to `room`, asked through the same
  * message the popup sends. `status` is an extension page to ask from.
  */
-async function joinedTabs(status: Page): Promise<number> {
-  return status.evaluate(async () => {
+async function joinedTabs(status: Page, room: string): Promise<number> {
+  return status.evaluate(async (room) => {
     const tabs = await chrome.tabs.query({});
     let joined = 0;
     for (const t of tabs) {
@@ -173,10 +173,51 @@ async function joinedTabs(status: Page): Promise<number> {
         kind: "status",
         tabId: t.id,
       });
-      if (s?.session?.status === "joined") joined++;
+      if (s?.session?.status === "joined" && s.session.roomId === room)
+        joined++;
     }
     return joined;
-  });
+  }, room);
+}
+
+/**
+ * Turn host-only mode on or off in `room` from the host's tab, as its popup's
+ * checkbox does.
+ */
+async function setHostOnly(
+  status: Page,
+  room: string,
+  on: boolean,
+): Promise<void> {
+  const sent = await status.evaluate(
+    async ({ room, on }) => {
+      for (const t of await chrome.tabs.query({})) {
+        const s = await chrome.runtime.sendMessage({
+          kind: "status",
+          tabId: t.id,
+        });
+        const session = s?.session;
+        const me = session?.members.find(
+          (m: { clientId: string }) => m.clientId === session.clientId,
+        );
+        if (session?.roomId === room && me?.host) {
+          await chrome.runtime.sendMessage({
+            kind: "hostOnly",
+            tabId: t.id,
+            on,
+          });
+          return true;
+        }
+      }
+      return false;
+    },
+    { room, on },
+  );
+  if (!sent) throw new Error(`no host tab in ${room}`);
+}
+
+function inviteTo(room: string): string {
+  return `${pageUrl}#insync=${room}&insync-server=${encodeURIComponent(wsUrl)}`;
 }
 
 /** Both tabs at the same place, both playing or both paused. */
@@ -188,9 +229,9 @@ async function inSync(a: Page, b: Page): Promise<boolean> {
 test("two tabs in a room follow each other", async () => {
   const status = await context.newPage();
   await status.goto(`chrome-extension://${extensionId}/popup.html`);
-  const joined = () => joinedTabs(status);
+  const joined = () => joinedTabs(status, "e2e-room");
 
-  const invite = `${pageUrl}#insync=e2e-room&insync-server=${encodeURIComponent(wsUrl)}`;
+  const invite = inviteTo("e2e-room");
   const a = await context.newPage();
   await a.goto(invite);
   await expect.poll(joined).toBe(1);
@@ -225,4 +266,46 @@ test("two tabs in a room follow each other", async () => {
   // And they keep playing together.
   await expect.poll(async () => (await media(b)).t).toBeGreaterThan(63);
   expect(await inSync(a, b)).toBe(true);
+});
+
+test("in a host-only room, only the host controls playback", async () => {
+  const status = await context.newPage();
+  await status.goto(`chrome-extension://${extensionId}/popup.html`);
+  const joined = () => joinedTabs(status, "e2e-host");
+
+  // The first tab in is the host.
+  const host = await context.newPage();
+  await host.goto(inviteTo("e2e-host"));
+  await expect.poll(joined).toBe(1);
+  const guest = await context.newPage();
+  await guest.goto(inviteTo("e2e-host"));
+  await expect.poll(joined).toBe(2);
+
+  await control(host, { do: "seek", to: 30 });
+  await expect.poll(async () => Math.round((await media(guest)).t)).toBe(30);
+  await setHostOnly(status, "e2e-host", true);
+
+  // The guest's play, seek and speed change are undone, and the host's video
+  // doesn't move.
+  await new Promise((r) => setTimeout(r, 500));
+  await control(guest, { do: "play" });
+  await expect.poll(async () => (await media(guest)).paused).toBe(true);
+  await control(guest, { do: "seek", to: 90 });
+  await expect.poll(async () => Math.round((await media(guest)).t)).toBe(30);
+  await control(guest, { do: "rate", to: 2 });
+  await expect.poll(async () => (await media(guest)).rate).toBe(1);
+  await new Promise((r) => setTimeout(r, 500));
+  expect(await media(host)).toMatchObject({ paused: true, rate: 1 });
+  expect(Math.round((await media(host)).t)).toBe(30);
+
+  // The host still controls everyone.
+  await control(host, { do: "play" });
+  await expect.poll(async () => (await media(guest)).paused).toBe(false);
+  await expect.poll(() => inSync(host, guest)).toBe(true);
+
+  // With host-only off again, the guest can pause the room.
+  await setHostOnly(status, "e2e-host", false);
+  await new Promise((r) => setTimeout(r, 500));
+  await control(guest, { do: "pause" });
+  await expect.poll(async () => (await media(host)).paused).toBe(true);
 });

@@ -1,5 +1,6 @@
 import type { ChatLineMessage } from "@wps/protocol";
 import { DEFAULT_SERVER, inviteLink } from "./invite";
+import { canControl, isHost } from "./session";
 import {
   DEBUG_OVERLAY_KEY,
   type PopupRequest,
@@ -19,6 +20,7 @@ const chatLog = $("chat-log");
 const chatForm = $<HTMLFormElement>("chat-form");
 const chatInput = $<HTMLInputElement>("chat-input");
 const inviteButton = $<HTMLButtonElement>("copy-invite");
+const hostOnlyInput = $<HTMLInputElement>("host-only");
 
 /** The invite link for the room this tab is in, or null. Set on every render. */
 let invite: string | null = null;
@@ -87,8 +89,23 @@ function render(s: TabStatus): void {
   $("members").textContent =
     session.members.length > 0
       ? `Watching: ${session.members
-          .map((m) => (m.buffering ? `${m.name} (loading)` : m.name))
+          .map((m) => {
+            const tags = [m.host && "host", m.buffering && "loading"].filter(
+              Boolean,
+            );
+            return tags.length > 0 ? `${m.name} (${tags.join(", ")})` : m.name;
+          })
           .join(", ")}`
+      : "";
+  const host = isHost(session);
+  const hostOnly = session.state?.hostOnly === true;
+  hostOnlyInput.checked = hostOnly;
+  hostOnlyInput.disabled = !joined || !host;
+  hostOnlyInput.title = host ? "" : "Only the host can change this.";
+  const hostName = session.members.find((m) => m.host)?.name ?? "the host";
+  $("control-note").textContent =
+    hostOnly && !host
+      ? `Only ${hostName} can play, pause, seek or switch video right now.`
       : "";
   const loading = session.members.filter((m) => m.buffering);
   $("waiting").textContent =
@@ -97,7 +114,9 @@ function render(s: TabStatus): void {
       : "";
   $("video-note").textContent =
     joined && !s.onRoomVideo
-      ? "This tab isn't on the room's video. Open a video here to switch everyone to it."
+      ? canControl(session)
+        ? "This tab isn't on the room's video. Open a video here to switch everyone to it."
+        : "This tab isn't on the room's video."
       : !s.hasVideo
         ? "No video found on this page yet."
         : s.adShowing
@@ -160,6 +179,13 @@ async function main(): Promise<void> {
       inviteButton.textContent = "Copied!";
       setTimeout(() => (inviteButton.textContent = "Copy invite link"), 1500);
     });
+  });
+  hostOnlyInput.addEventListener("change", () => {
+    void request({ kind: "hostOnly", tabId, on: hostOnlyInput.checked }).then(
+      render,
+    );
+    // The server's answer comes back as a new room state.
+    setTimeout(() => void refresh(), 200);
   });
   $("leave").addEventListener("click", () => {
     void request({ kind: "leave", tabId }).then(render);

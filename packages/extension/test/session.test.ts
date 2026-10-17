@@ -2,6 +2,8 @@ import type { RoomState, ServerMessage } from "@wps/protocol";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   RoomSession,
+  canControl,
+  isHost,
   type SessionSnapshot,
   type SocketLike,
 } from "../src/session";
@@ -255,6 +257,56 @@ describe("RoomSession", () => {
     expect(timers).toEqual([]);
     expect(socket.closed).toBe(true);
     expect(session.snapshot.status).toBe("closed");
+  });
+
+  it("counts changes refused for not being the host, without showing an error", () => {
+    welcome();
+    socket.receive({
+      type: "error",
+      code: "not_host",
+      message: "only the host can control playback",
+    });
+    expect(session.snapshot.refused).toBe(1);
+    expect(session.snapshot.error).toBeNull();
+  });
+
+  it("asks to turn host-only mode on once joined", () => {
+    session.setHostOnly(true);
+    welcome();
+    socket.sent = [];
+    session.setHostOnly(true);
+    expect(socket.sent).toEqual([{ type: "control", hostOnly: true }]);
+  });
+
+  describe("who controls the room", () => {
+    const me = { clientId: "client-1", name: "Ryan" };
+    const other = { clientId: "client-2", name: "Sam" };
+    function snap(
+      hostOnly: boolean,
+      members: { clientId: string; name: string; host?: boolean }[],
+    ): SessionSnapshot {
+      return {
+        ...session.snapshot,
+        clientId: "client-1",
+        state: { ...paused, hostOnly },
+        members,
+      };
+    }
+
+    it("lets anyone control a room that isn't host-only", () => {
+      expect(canControl(snap(false, [me, { ...other, host: true }]))).toBe(
+        true,
+      );
+    });
+
+    it("lets only the host control a host-only room", () => {
+      expect(canControl(snap(true, [me, { ...other, host: true }]))).toBe(
+        false,
+      );
+      expect(canControl(snap(true, [{ ...me, host: true }, other]))).toBe(true);
+      expect(isHost(snap(true, [{ ...me, host: true }, other]))).toBe(true);
+      expect(isHost(snap(true, [me, { ...other, host: true }]))).toBe(false);
+    });
   });
 
   it("ignores malformed messages", () => {

@@ -25,6 +25,8 @@ let room: RoomUpdate = {
   offsetMs: 0,
   rttMs: null,
   joins: 0,
+  canControl: true,
+  refused: 0,
 };
 
 function post(msg: PlayerEvent): void {
@@ -46,6 +48,7 @@ function bind(): void {
     isHeld: () => youtube && isAdShowing(found),
     onHeldChange: (held) => post({ kind: "ad", showing: held }),
     onBuffering: (buffering) => post({ kind: "buffering", buffering }),
+    canControl: () => room.canControl,
   });
   sync.apply(room.state);
   connect();
@@ -60,6 +63,8 @@ function connect(): void {
     // its versions can be lower than what we had: forget the old state first.
     if (msg.joins !== room.joins) sync?.apply(null);
     room = msg;
+    // Also how a change the server refused gets undone: the video assumed it
+    // without a new version, so the room's state still applies.
     sync?.apply(msg.state);
   });
   // The service worker went idle (we reconnect when it asks) or the extension

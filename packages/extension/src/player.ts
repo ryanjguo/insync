@@ -52,6 +52,12 @@ export interface PlayerSyncOptions {
    * and when it can play again (false).
    */
   onBuffering?: (buffering: boolean) => void;
+  /**
+   * False while the user may not steer the room (it's host-only and this
+   * isn't the host): their play, pause, seek and speed changes are undone
+   * instead of sent. Defaults to always true.
+   */
+  canControl?: () => boolean;
   /** How long the video must stall before it counts as buffering. Milliseconds. */
   stallMs?: number;
   /** After the video loads new media, how long to ignore its events before catching up. Milliseconds. */
@@ -146,6 +152,9 @@ const END_MARGIN_SEC = 1;
  * set (the user picked another speed) is sent as a `rate` change. Like the
  * other events, a ratechange only counts when the rate differs from the last
  * one set here, so drift nudges and the room's own changes aren't echoed.
+ *
+ * Host-only rooms: while `canControl` says the user may not steer the room,
+ * a play, pause, seek or speed change they make is undone instead of sent.
  *
  * Buffering: when the video stalls for data for more than `stallMs` while
  * following the room, `onBuffering(true)` lets the room pause for it;
@@ -398,6 +407,10 @@ export class PlayerSync {
     const rate = this.media.playbackRate;
     if (!room || this.held || this.settling) return;
     if (rate === this.appliedRate || rate === room.rate) return;
+    if (!this.mayControl()) {
+      this.setRate(this.appliedRate ?? room.rate);
+      return;
+    }
     if (!(rate >= MIN_RATE && rate <= MAX_RATE)) return;
     this.opts.send({ type: "rate", baseVersion: room.version, rate });
     // Assume the room agrees, as report does for intents.
@@ -497,7 +510,16 @@ export class PlayerSync {
           return;
         break;
     }
+    if (!this.mayControl()) {
+      // Not ours to change: put the video back where the room is.
+      this.apply(room);
+      return;
+    }
     this.report(action, room);
+  }
+
+  private mayControl(): boolean {
+    return this.opts.canControl?.() ?? true;
   }
 
   /** Tell the room what this video just did. */
