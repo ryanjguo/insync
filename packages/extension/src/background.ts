@@ -8,12 +8,14 @@ import {
   CONNECT_REQUEST,
   PLAYER_PORT,
   type InviteReport,
+  type Notice,
   type PageReport,
   type PlayerEvent,
   type PopupRequest,
   type RoomUpdate,
   type TabStatus,
 } from "./messages";
+import { chatNotice, presenceNotices, stateNotice } from "./notices";
 import { RoomSession, canControl, type SessionSnapshot } from "./session";
 
 /** Keepalive and clock-resync interval. A WebSocket message every 20 s also keeps the service worker alive. */
@@ -121,6 +123,13 @@ function push(t: Tab): void {
   for (const port of t.ports) port.postMessage(update);
 }
 
+/** Show a notice over the tab's videos. */
+function notify(t: Tab, text: string | null): void {
+  if (!text) return;
+  const notice: Notice = { kind: "notice", text };
+  for (const port of t.ports) port.postMessage(notice);
+}
+
 /** Tell the room whether any of the tab's videos is buffering. */
 function reportBuffering(t: Tab): void {
   t.session?.setBuffering(t.buffering.size > 0);
@@ -156,8 +165,22 @@ function join(
     name: req.name,
     createSocket: (url) => new WebSocket(url),
     onChat: (line, history) => {
-      if (!history && line.from !== session.snapshot.clientId)
+      if (history) return;
+      notify(t, chatNotice(line, session.snapshot.clientId));
+      if (line.from !== session.snapshot.clientId)
         setUnread(tabId, t, t.unread + 1);
+    },
+    onState: (msg) => {
+      const s = session.snapshot;
+      notify(t, stateNotice(msg, s.members, s.clientId));
+    },
+    onPresence: (before, after) => {
+      for (const text of presenceNotices(
+        before,
+        after,
+        session.snapshot.clientId,
+      ))
+        notify(t, text);
     },
     onChange: (snap) => {
       t.follower.setRoom(

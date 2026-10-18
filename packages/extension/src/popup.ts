@@ -4,6 +4,7 @@ import { lengthWarning } from "./lengths";
 import { canControl, isHost } from "./session";
 import {
   DEBUG_OVERLAY_KEY,
+  NOTICES_KEY,
   type PopupRequest,
   type TabStatus,
 } from "./messages";
@@ -17,6 +18,7 @@ const serverInput = $<HTMLInputElement>("server");
 const inRoom = $("in-room");
 const errorEl = $("error");
 const debugInput = $<HTMLInputElement>("debug-overlay");
+const noticesInput = $<HTMLInputElement>("notices");
 const chatLog = $("chat-log");
 const chatForm = $<HTMLFormElement>("chat-form");
 const chatInput = $<HTMLInputElement>("chat-input");
@@ -141,7 +143,12 @@ async function main(): Promise<void> {
     "server",
     "room",
     DEBUG_OVERLAY_KEY,
+    NOTICES_KEY,
   ]);
+  noticesInput.checked = saved[NOTICES_KEY] !== false;
+  noticesInput.addEventListener("change", () => {
+    void chrome.storage.local.set({ [NOTICES_KEY]: noticesInput.checked });
+  });
   debugInput.checked = saved[DEBUG_OVERLAY_KEY] === true;
   debugInput.addEventListener("change", () => {
     void chrome.storage.local.set({ [DEBUG_OVERLAY_KEY]: debugInput.checked });

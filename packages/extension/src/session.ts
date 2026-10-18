@@ -9,6 +9,7 @@ import {
   type MediaMessage,
   type Member,
   type RoomState,
+  type StateMessage,
 } from "@wps/protocol";
 import { estimateOffset, type ClockSample } from "@wps/sync-core";
 
@@ -77,6 +78,10 @@ export interface SessionOptions {
    * (re)join, which the server replays right after the welcome.
    */
   onChat?: (line: ChatLineMessage, history: boolean) => void;
+  /** Called for each new room state taken from the server, with what caused it. */
+  onState?: (msg: StateMessage) => void;
+  /** Called when the member list changes while in the room (not on a (re)join's welcome). */
+  onPresence?: (before: Member[], after: Member[]) => void;
   /** Timer for reconnect delays. Defaults to setTimeout. */
   setTimer?: (fn: () => void, ms: number) => unknown;
   /** Cancels a timer from setTimer. Defaults to clearTimeout. */
@@ -335,12 +340,17 @@ export class RoomSession {
         });
         break;
       case "state":
-        if (!this.snap.state || msg.state.version >= this.snap.state.version)
+        if (!this.snap.state || msg.state.version >= this.snap.state.version) {
           this.update({ state: msg.state });
+          this.opts.onState?.(msg);
+        }
         break;
-      case "presence":
+      case "presence": {
+        const before = this.snap.members;
         this.update({ members: msg.members });
+        this.opts.onPresence?.(before, msg.members);
         break;
+      }
       case "chat":
         this.update({ chat: [...this.snap.chat, msg].slice(-MAX_CHAT_LINES) });
         this.opts.onChat?.(msg, msg.sentAt <= this.joinedAt);
