@@ -20,6 +20,9 @@ import { DebugOverlay, formatOverlay } from "./overlay";
 import { PlayerSync } from "./player";
 import { findMainVideo, isAdShowing, isYouTube } from "./video";
 
+/** How long after the service worker stops, while in a room, to connect to it again. */
+const RECONNECT_MS = 1_000;
+
 let port: chrome.runtime.Port | null = null;
 let video: HTMLVideoElement | null = null;
 let sync: PlayerSync | null = null;
@@ -92,10 +95,13 @@ function connect(): void {
     // without a new version, so the room's state still applies.
     sync?.apply(msg.state);
   });
-  // The service worker went idle (we reconnect when it asks) or the extension
-  // was reloaded (chrome.runtime.id is gone and we stay quiet).
+  // The service worker stopped, or the extension was reloaded (then
+  // chrome.runtime.id is gone and we stay quiet). Out of a room, wait for the
+  // worker to ask, as it does when the tab joins one. In a room, connect again
+  // soon: that starts the worker again, and it puts the tab back in its room.
   port.onDisconnect.addListener(() => {
     port = null;
+    if (room.joins > 0) setTimeout(connect, RECONNECT_MS);
   });
 }
 

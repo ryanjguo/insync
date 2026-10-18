@@ -157,6 +157,11 @@ as the same person; anything you play, pause or seek meanwhile is sent once
 it's back. The server drops connections that have been silent for a minute, so
 someone whose laptop went to sleep leaves the member list.
 
+Chrome also stops the extension's background worker now and then (after an
+update, or to save memory), which closes every tab's connection. Each tab
+remembers its room for as long as the browser is open, so a tab in a room
+starts the worker again within a second and rejoins as the same person.
+
 ## Deploying the server
 
 The server is one small Go binary with no database, so any host that runs a
@@ -203,8 +208,9 @@ npm run format     # apply Prettier
 page with a `<video>`, and opens two tabs of a real Chromium with the
 extension loaded. Both join one room through an invite link, and the test
 checks that play, pause, seek and speed changes in one tab show up in the
-other, that in a host-only room only the host's changes do, and that each
-tab's video length reaches the room. It needs Go and a Playwright Chromium: run
+other, that in a host-only room only the host's changes do, that each
+tab's video length reaches the room, and that both tabs rejoin as themselves
+after the extension's service worker is stopped. It needs Go and a Playwright Chromium: run
 `npx playwright install chromium` once, or point `CHROMIUM_PATH` at a
 Chromium you already have.
 

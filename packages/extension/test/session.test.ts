@@ -367,6 +367,48 @@ describe("RoomSession", () => {
       expect(session.snapshot.joins).toBe(2);
     });
 
+    it("comes back as a saved member, and keeps trying to", () => {
+      const sockets: FakeSocket[] = [];
+      const timers: (() => void)[] = [];
+      const restored = new RoomSession({
+        url: "ws://localhost:8080/ws",
+        roomId: "movie-night",
+        name: "Ryan",
+        resume: { clientId: "client-1", resumeToken: "secret-1" },
+        createSocket: () => {
+          const s = new FakeSocket();
+          sockets.push(s);
+          return s;
+        },
+        onChange: () => {},
+        setTimer: (fn) => timers.push(fn),
+        random: () => 0,
+      });
+      expect(restored.resume).toEqual({
+        clientId: "client-1",
+        resumeToken: "secret-1",
+      });
+      // The server isn't reachable yet: try again rather than give up.
+      sockets[0]!.onclose?.({} as CloseEvent);
+      expect(restored.snapshot.status).toBe("reconnecting");
+      timers.shift()!();
+      sockets[1]!.onopen?.(new Event("open"));
+      expect(sockets[1]!.sent[0]).toMatchObject({
+        type: "join",
+        clientId: "client-1",
+        resumeToken: "secret-1",
+      });
+    });
+
+    it("has nothing to resume with until the server gives an ID", () => {
+      expect(session.resume).toBeNull();
+      welcome();
+      expect(session.resume).toEqual({
+        clientId: "client-1",
+        resumeToken: "secret-1",
+      });
+    });
+
     it("waits longer after each failed attempt, then starts over once back", () => {
       joinAndDrop();
       for (let i = 0; i < 5; i++) {
