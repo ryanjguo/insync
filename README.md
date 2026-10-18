@@ -150,7 +150,9 @@ someone whose laptop went to sleep leaves the member list.
 
 The server is one small Go binary with no database, so any host that runs a
 Docker image works. Rooms live in memory: run a single instance, and expect
-rooms (and chat) to reset when it restarts.
+rooms (and chat) to reset when it restarts. A room nobody has been in for 10
+minutes is forgotten too, so the server's memory doesn't grow with every
+room ever used.
 
 - `server/Dockerfile` builds a ~15 MB image. It listens on `$PORT` (8080 by
   default), answers health checks at `/healthz`, and shuts down cleanly on

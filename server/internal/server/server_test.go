@@ -417,3 +417,38 @@ func TestDuration(t *testing.T) {
 		t.Fatalf("alice: got %+v, want bob's video length", p)
 	}
 }
+
+// TestEmptyRoomIsForgotten: once a swept room's last member has left, joining
+// its ID again starts a fresh room.
+func TestEmptyRoomIsForgotten(t *testing.T) {
+	s := New("")
+	s.now = func() time.Time { return time.UnixMilli(5000) }
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	alice := dial(ctx, t, ts)
+	send(ctx, t, alice, `{"type":"join","protocolVersion":1,"roomId":"movie-night","name":"Alice"}`)
+	recv(ctx, t, alice)
+	send(ctx, t, alice, `{"type":"pause","baseVersion":0,"position":42}`)
+	recv(ctx, t, alice)
+	_ = alice.Close(websocket.StatusNormalClosure, "")
+
+	for len(s.rooms.GetOrCreate("movie-night").Members()) > 0 {
+		if ctx.Err() != nil {
+			t.Fatal("alice never left the room")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if n := s.rooms.Sweep(5000, 0); n != 1 {
+		t.Fatalf("swept %d rooms, want 1", n)
+	}
+
+	bob := dial(ctx, t, ts)
+	send(ctx, t, bob, `{"type":"join","protocolVersion":1,"roomId":"movie-night","name":"Bob"}`)
+	w, ok := recv(ctx, t, bob).(protocol.Welcome)
+	if !ok || w.State.Version != 0 || w.State.Position != 0 {
+		t.Fatalf("bob: got %+v, want a fresh room", w)
+	}
+}

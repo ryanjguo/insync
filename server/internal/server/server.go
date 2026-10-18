@@ -28,6 +28,11 @@ const (
 	// before it is dropped. Clients ping every 20 s, so a connection this quiet
 	// is dead (say, a laptop that went to sleep) and its member should leave.
 	idleTimeout = 60 * time.Second
+	// emptyRoomTTL is how long a room nobody is in is kept, so people who drop
+	// out briefly come back to it as it was, before it is forgotten.
+	emptyRoomTTL = 10 * time.Minute
+	// sweepInterval is how often empty rooms are looked for.
+	sweepInterval = time.Minute
 )
 
 // Server serves the health check, the WebSocket endpoint and, optionally, a
@@ -55,6 +60,23 @@ func (s *Server) Handler() http.Handler {
 		mux.Handle("GET /", http.FileServer(http.Dir(s.staticDir)))
 	}
 	return mux
+}
+
+// SweepRooms forgets rooms that have been empty for emptyRoomTTL, checking
+// every sweepInterval until ctx is done.
+func (s *Server) SweepRooms(ctx context.Context) {
+	t := time.NewTicker(sweepInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if n := s.rooms.Sweep(s.now().UnixMilli(), emptyRoomTTL.Milliseconds()); n > 0 {
+				slog.Info("forgot empty rooms", "removed", n, "rooms", s.rooms.Len())
+			}
+		}
+	}
 }
 
 // client is one WebSocket connection. It is the room.Peer for its member.
@@ -222,7 +244,13 @@ func (s *Server) join(c *client, m protocol.Join, nowMs int64) {
 		id = newClientID()
 	}
 	rm := s.rooms.GetOrCreate(m.RoomID)
-	if err := rm.Join(id, m.Name, c, nowMs); err != nil {
+	err := rm.Join(id, m.Name, c, nowMs)
+	if errors.Is(err, room.ErrGone) {
+		// Swept between getting it and joining: the registry has a fresh one now.
+		rm = s.rooms.GetOrCreate(m.RoomID)
+		err = rm.Join(id, m.Name, c, nowMs)
+	}
+	if err != nil {
 		code := protocol.ErrBadMessage
 		if errors.Is(err, room.ErrFull) {
 			code = protocol.ErrRoomFull

@@ -32,6 +32,10 @@ const (
 // ErrFull is returned by Join when the room already has MaxMembers members.
 var ErrFull = errors.New("room is full")
 
+// ErrGone is returned by Join when the room was removed from its Registry
+// for being empty. Get the room again from the Registry and join that.
+var ErrGone = errors.New("room was removed")
+
 // State is the room's playback state. Position is in seconds at server time
 // UpdatedAt (milliseconds since the Unix epoch).
 type State struct {
@@ -156,6 +160,11 @@ type Room struct {
 	// should play again once none are left.
 	waiting bool
 	chat    []ChatLine // the last ChatHistory lines, oldest first
+	// emptySince is the server time (ms) the last member left, 0 while
+	// anyone is in the room or before the sweeper first sees it empty.
+	emptySince int64
+	// gone is set when the Registry removes the room; nobody can join it then.
+	gone bool
 }
 
 // New returns an empty, paused room at position 0.
@@ -175,9 +184,13 @@ func (r *Room) Snapshot() State {
 func (r *Room) Join(clientID, name string, p Peer, nowMs int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.gone {
+		return ErrGone
+	}
 	if _, rejoin := r.members[clientID]; !rejoin && len(r.members) >= MaxMembers {
 		return ErrFull
 	}
+	r.emptySince = 0
 	r.joinSeen++
 	m := &member{name: name, peer: p, joined: r.joinSeen}
 	if old, rejoin := r.members[clientID]; rejoin {
@@ -210,6 +223,9 @@ func (r *Room) Leave(clientID string, p Peer, nowMs int64) {
 		return
 	}
 	delete(r.members, clientID)
+	if len(r.members) == 0 {
+		r.emptySince = nowMs
+	}
 	if r.host == clientID {
 		r.host = r.oldestMember()
 	}
@@ -485,4 +501,45 @@ func (g *Registry) GetOrCreate(id string) *Room {
 		g.rooms[id] = r
 	}
 	return r
+}
+
+// Sweep removes rooms that have had nobody in them for at least emptyFor ms,
+// so a long-running server doesn't keep every room (and its chat) ever used.
+// A room seen empty for the first time counts as empty from nowMs. It
+// returns how many rooms it removed.
+func (g *Registry) Sweep(nowMs, emptyFor int64) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	removed := 0
+	for id, r := range g.rooms {
+		if r.sweep(nowMs, emptyFor) {
+			delete(g.rooms, id)
+			removed++
+		}
+	}
+	return removed
+}
+
+// sweep marks the room gone if it has been empty for emptyFor ms.
+func (r *Room) sweep(nowMs, emptyFor int64) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.members) > 0 {
+		return false
+	}
+	if r.emptySince == 0 {
+		r.emptySince = nowMs
+	}
+	if nowMs-r.emptySince < emptyFor {
+		return false
+	}
+	r.gone = true
+	return true
+}
+
+// Len returns how many rooms the registry holds.
+func (g *Registry) Len() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return len(g.rooms)
 }
