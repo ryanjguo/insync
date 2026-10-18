@@ -54,6 +54,8 @@ export interface JoinMessage {
   name: string;
   /** Present when resuming after a reconnect. */
   clientId?: string;
+  /** Sent with clientId when resuming: the token from the last welcome. */
+  resumeToken?: string;
 }
 
 export interface PlayMessage {
@@ -149,6 +151,12 @@ export type ClientMessageType = ClientMessage["type"];
 export interface WelcomeMessage {
   type: "welcome";
   clientId: string;
+  /**
+   * Secret, sent only to this client, that a rejoin brings with clientId to
+   * take this member's place back. Every member sees clientId, so it alone
+   * can't. Absent from older servers.
+   */
+  resumeToken?: string;
   roomId: string;
   serverTime: number;
   state: RoomState;

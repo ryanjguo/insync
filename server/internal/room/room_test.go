@@ -159,7 +159,7 @@ func TestSetMedia(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := New("room")
 			p := &recorder{}
-			_ = r.Join("alice", "Alice", p, 0)
+			_ = r.Join("alice", "", "Alice", p, 0)
 			r.state = tt.start
 			if got := r.SetMedia(tt.url, "alice", 9000); got != tt.want {
 				t.Errorf("SetMedia returned %+v, want %+v", got, tt.want)
@@ -179,7 +179,7 @@ func TestJoinAndBroadcast(t *testing.T) {
 	r := New("room")
 	alice, bob := &recorder{}, &recorder{}
 
-	if err := r.Join("alice", "Alice", alice, 1000); err != nil {
+	if err := r.Join("alice", "", "Alice", alice, 1000); err != nil {
 		t.Fatal(err)
 	}
 	j, ok := alice.last().(Joined)
@@ -187,7 +187,7 @@ func TestJoinAndBroadcast(t *testing.T) {
 		t.Fatalf("alice got %+v, want Joined with herself", alice.last())
 	}
 
-	if err := r.Join("bob", "Bob", bob, 2000); err != nil {
+	if err := r.Join("bob", "", "Bob", bob, 2000); err != nil {
 		t.Fatal(err)
 	}
 	want := []Member{{ClientID: "alice", Name: "Alice", Host: true}, {ClientID: "bob", Name: "Bob"}}
@@ -215,11 +215,42 @@ func TestJoinAndBroadcast(t *testing.T) {
 	}
 }
 
+func TestRejoinNeedsResumeToken(t *testing.T) {
+	r := New("room")
+	alice, mallory, back := &recorder{}, &recorder{}, &recorder{}
+	if err := r.Join("alice", "alice-secret", "Alice", alice, 1000); err != nil {
+		t.Fatal(err)
+	}
+	if j, ok := alice.last().(Joined); !ok || j.ResumeToken != "alice-secret" {
+		t.Fatalf("alice got %+v, want Joined with her resume token", alice.last())
+	}
+	for _, token := range []string{"", "guess"} {
+		if err := r.Join("alice", token, "Mallory", mallory, 2000); !errors.Is(err, ErrTaken) {
+			t.Fatalf("join as alice with token %q: err = %v, want ErrTaken", token, err)
+		}
+	}
+	if len(mallory.events) != 0 {
+		t.Fatalf("refused joiner got %v, want nothing", mallory.events)
+	}
+	want := []Member{{ClientID: "alice", Name: "Alice", Host: true}}
+	if got := r.Members(); !slices.Equal(got, want) {
+		t.Fatalf("members = %v, want %v", got, want)
+	}
+
+	if err := r.Join("alice", "alice-secret", "Alice", back, 3000); err != nil {
+		t.Fatalf("rejoin with the right token: %v", err)
+	}
+	r.Apply(Pause, 1, "alice", 4000)
+	if _, ok := back.last().(StateChanged); !ok {
+		t.Fatal("rejoined peer did not get the state change")
+	}
+}
+
 func TestRejoinReplacesPeer(t *testing.T) {
 	r := New("room")
 	old, fresh := &recorder{}, &recorder{}
-	_ = r.Join("alice", "Alice", old, 1000)
-	_ = r.Join("alice", "Alice", fresh, 2000)
+	_ = r.Join("alice", "", "Alice", old, 1000)
+	_ = r.Join("alice", "", "Alice", fresh, 2000)
 
 	// The old connection closing must not remove the new one.
 	r.Leave("alice", old, 0)
@@ -238,15 +269,15 @@ func TestRejoinReplacesPeer(t *testing.T) {
 func TestRoomFull(t *testing.T) {
 	r := New("room")
 	for i := range MaxMembers {
-		if err := r.Join(string(rune('a'+i))+"-id", "x", &recorder{}, 0); err != nil {
+		if err := r.Join(string(rune('a'+i))+"-id", "", "x", &recorder{}, 0); err != nil {
 			t.Fatalf("join %d: %v", i, err)
 		}
 	}
-	if err := r.Join("one-too-many", "x", &recorder{}, 0); !errors.Is(err, ErrFull) {
+	if err := r.Join("one-too-many", "", "x", &recorder{}, 0); !errors.Is(err, ErrFull) {
 		t.Fatalf("got %v, want ErrFull", err)
 	}
 	// A reconnect of someone already in the room still gets in.
-	if err := r.Join("a-id", "x", &recorder{}, 0); err != nil {
+	if err := r.Join("a-id", "", "x", &recorder{}, 0); err != nil {
 		t.Fatalf("rejoin: %v", err)
 	}
 }
@@ -257,7 +288,7 @@ func TestLead(t *testing.T) {
 	if got := r.Lead(); got != MinLeadMs {
 		t.Fatalf("empty room lead = %d, want %d", got, MinLeadMs)
 	}
-	_ = r.Join("alice", "Alice", &recorder{}, 0)
+	_ = r.Join("alice", "", "Alice", &recorder{}, 0)
 	if got := r.Lead(); got != DefaultRTTMs+LeadMargin {
 		t.Fatalf("lead before any round trip = %d, want the default", got)
 	}
@@ -265,12 +296,12 @@ func TestLead(t *testing.T) {
 	if got := r.Lead(); got != MinLeadMs {
 		t.Fatalf("fast room lead = %d, want the minimum %d", got, MinLeadMs)
 	}
-	_ = r.Join("bob", "Bob", &recorder{}, 0)
+	_ = r.Join("bob", "", "Bob", &recorder{}, 0)
 	r.SetRTT("bob", 300.4)
 	if got := r.Lead(); got != 351 {
 		t.Fatalf("lead = %d, want bob's 300.4 ms rounded up plus %d", got, LeadMargin)
 	}
-	_ = r.Join("bob", "Bob", &recorder{}, 0) // reconnect keeps the round trip
+	_ = r.Join("bob", "", "Bob", &recorder{}, 0) // reconnect keeps the round trip
 	if got := r.Lead(); got != 351 {
 		t.Fatalf("lead after bob rejoined = %d, want 351", got)
 	}
@@ -292,8 +323,8 @@ func playingRoom(t *testing.T) (*Room, *recorder, *recorder) {
 	t.Helper()
 	r := New("room")
 	alice, bob := &recorder{}, &recorder{}
-	_ = r.Join("alice", "Alice", alice, 0)
-	_ = r.Join("bob", "Bob", bob, 0)
+	_ = r.Join("alice", "", "Alice", alice, 0)
+	_ = r.Join("bob", "", "Bob", bob, 0)
 	r.SetRTT("alice", 30)
 	r.SetRTT("bob", 50)
 	r.Apply(Play, 10, "alice", 900) // starts at 1000, after a 100 ms lead
@@ -354,7 +385,7 @@ func TestBufferingWaitsForEveryone(t *testing.T) {
 
 func TestBufferingWhilePausedChangesNothing(t *testing.T) {
 	r := New("room")
-	_ = r.Join("alice", "Alice", &recorder{}, 0)
+	_ = r.Join("alice", "", "Alice", &recorder{}, 0)
 	r.SetBuffering("alice", true, 1000)
 	r.SetBuffering("alice", false, 2000)
 	if s := r.Snapshot(); s.Playing || s.Version != 0 {
@@ -392,7 +423,7 @@ func TestRejoinKeepsBuffering(t *testing.T) {
 	r, alice, _ := playingRoom(t)
 	r.SetBuffering("bob", true, 2000)
 	fresh := &recorder{}
-	_ = r.Join("bob", "Bob", fresh, 2500)
+	_ = r.Join("bob", "", "Bob", fresh, 2500)
 	if s := r.Snapshot(); s.Playing {
 		t.Fatal("rejoin resumed the room before bob was ready")
 	}
@@ -405,8 +436,8 @@ func TestRejoinKeepsBuffering(t *testing.T) {
 func TestChat(t *testing.T) {
 	r := New("room")
 	alice, bob := &recorder{}, &recorder{}
-	_ = r.Join("alice", "Alice", alice, 0)
-	_ = r.Join("bob", "Bob", bob, 0)
+	_ = r.Join("alice", "", "Alice", alice, 0)
+	_ = r.Join("bob", "", "Bob", bob, 0)
 
 	r.Chat("alice", "hi", 1000)
 	want := ChatLine{From: "alice", Name: "Alice", Text: "hi", SentAt: 1000}
@@ -424,12 +455,12 @@ func TestChat(t *testing.T) {
 
 func TestChatHistory(t *testing.T) {
 	r := New("room")
-	_ = r.Join("alice", "Alice", &recorder{}, 0)
+	_ = r.Join("alice", "", "Alice", &recorder{}, 0)
 	for i := range ChatHistory + 5 {
 		r.Chat("alice", "line", int64(i))
 	}
 	late := &recorder{}
-	_ = r.Join("late", "Late", late, 0)
+	_ = r.Join("late", "", "Late", late, 0)
 	var lines []ChatLine
 	for _, e := range late.events {
 		if line, ok := e.(ChatLine); ok {
@@ -480,7 +511,7 @@ func TestSetPlaybackRate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := New("room")
 			p := &recorder{}
-			_ = r.Join("alice", "Alice", p, 0)
+			_ = r.Join("alice", "", "Alice", p, 0)
 			r.state = tt.start
 			p.events = nil
 			if got := r.SetPlaybackRate(tt.rate, "alice", 9000); got != tt.want {
@@ -501,9 +532,9 @@ func TestSetPlaybackRate(t *testing.T) {
 func TestHost(t *testing.T) {
 	r := New("room")
 	alice, bob, carol := &recorder{}, &recorder{}, &recorder{}
-	_ = r.Join("alice", "Alice", alice, 0)
-	_ = r.Join("bob", "Bob", bob, 0)
-	_ = r.Join("carol", "Carol", carol, 0)
+	_ = r.Join("alice", "", "Alice", alice, 0)
+	_ = r.Join("bob", "", "Bob", bob, 0)
+	_ = r.Join("carol", "", "Carol", carol, 0)
 	if !r.IsHost("alice") || r.IsHost("bob") {
 		t.Fatal("want the first member to join as host")
 	}
@@ -519,7 +550,7 @@ func TestHost(t *testing.T) {
 
 	r.Leave("carol", carol, 0)
 	r.Leave("bob", bob, 0)
-	_ = r.Join("dave", "Dave", &recorder{}, 0)
+	_ = r.Join("dave", "", "Dave", &recorder{}, 0)
 	if !r.IsHost("dave") {
 		t.Fatal("want the first member into an emptied room as host")
 	}
@@ -559,8 +590,8 @@ func TestHostOnly(t *testing.T) {
 func TestSetDuration(t *testing.T) {
 	r := New("room")
 	alice, bob := &recorder{}, &recorder{}
-	_ = r.Join("alice", "Alice", alice, 0)
-	_ = r.Join("bob", "Bob", bob, 0)
+	_ = r.Join("alice", "", "Alice", alice, 0)
+	_ = r.Join("bob", "", "Bob", bob, 0)
 
 	r.SetDuration("bob", 5400)
 	mc, ok := alice.last().(MembersChanged)
@@ -577,7 +608,7 @@ func TestSetDuration(t *testing.T) {
 	}
 
 	// A reconnect keeps the length until the member reports again.
-	_ = r.Join("bob", "Bob", &recorder{}, 0)
+	_ = r.Join("bob", "", "Bob", &recorder{}, 0)
 	if got := r.Members()[1].Duration; got != 5400 {
 		t.Fatalf("duration after rejoining = %v, want 5400", got)
 	}
@@ -587,11 +618,11 @@ func TestSweepForgetsRoomsEmptyForLong(t *testing.T) {
 	g := NewRegistry()
 	busy, left, fresh := g.GetOrCreate("busy"), g.GetOrCreate("left"), g.GetOrCreate("fresh")
 	p := &recorder{}
-	if err := busy.Join("a", "A", p, 0); err != nil {
+	if err := busy.Join("a", "", "A", p, 0); err != nil {
 		t.Fatal(err)
 	}
 	q := &recorder{}
-	if err := left.Join("b", "B", q, 0); err != nil {
+	if err := left.Join("b", "", "B", q, 0); err != nil {
 		t.Fatal(err)
 	}
 	left.Leave("b", q, 1000)
@@ -615,9 +646,9 @@ func TestSweepSkipsRoomsRejoinedInTime(t *testing.T) {
 	g := NewRegistry()
 	r := g.GetOrCreate("abc")
 	p := &recorder{}
-	_ = r.Join("a", "A", p, 0)
+	_ = r.Join("a", "", "A", p, 0)
 	r.Leave("a", p, 1000)
-	_ = r.Join("a", "A", p, 5000)
+	_ = r.Join("a", "", "A", p, 5000)
 	r.Leave("a", p, 9000)
 	if n := g.Sweep(12_000, 10_000); n != 0 {
 		t.Fatal("swept a room that was empty for only 3 s")
@@ -628,7 +659,7 @@ func TestJoinAfterSweepIsRefused(t *testing.T) {
 	g := NewRegistry()
 	r := g.GetOrCreate("abc")
 	g.Sweep(0, 0)
-	if err := r.Join("a", "A", &recorder{}, 0); !errors.Is(err, ErrGone) {
+	if err := r.Join("a", "", "A", &recorder{}, 0); !errors.Is(err, ErrGone) {
 		t.Fatalf("Join on a swept room = %v, want ErrGone", err)
 	}
 }

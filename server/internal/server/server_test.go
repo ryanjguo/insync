@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -450,5 +451,35 @@ func TestEmptyRoomIsForgotten(t *testing.T) {
 	w, ok := recv(ctx, t, bob).(protocol.Welcome)
 	if !ok || w.State.Version != 0 || w.State.Position != 0 {
 		t.Fatalf("bob: got %+v, want a fresh room", w)
+	}
+}
+
+// TestTakingSomeonesPlace: a join with another member's client ID but not
+// their resume token joins as someone new; with the token it takes the
+// place back.
+func TestTakingSomeonesPlace(t *testing.T) {
+	ts := newTestServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	alice, mallory := dial(ctx, t, ts), dial(ctx, t, ts)
+
+	send(ctx, t, alice, `{"type":"join","protocolVersion":1,"roomId":"movie-night","name":"Alice"}`)
+	w, ok := recv(ctx, t, alice).(protocol.Welcome)
+	if !ok || len(w.ResumeToken) != 32 || w.ResumeToken == w.ClientID {
+		t.Fatalf("alice: got %+v, want a welcome with its own resume token", w)
+	}
+
+	send(ctx, t, mallory, `{"type":"join","protocolVersion":1,"roomId":"movie-night","name":"Mallory","clientId":"`+w.ClientID+`","resumeToken":"guessed-token"}`)
+	mw, ok := recv(ctx, t, mallory).(protocol.Welcome)
+	if !ok || mw.ClientID == w.ClientID || mw.ResumeToken == w.ResumeToken || len(mw.Members) != 2 || !mw.Members[0].Host || mw.Members[1].Host {
+		t.Fatalf("mallory: got %+v, want to join as someone new, not the host", mw)
+	}
+	recv(ctx, t, alice) // presence
+
+	back := dial(ctx, t, ts)
+	send(ctx, t, back, `{"type":"join","protocolVersion":1,"roomId":"movie-night","name":"Alice","clientId":"`+w.ClientID+`","resumeToken":"`+w.ResumeToken+`"}`)
+	bw, ok := recv(ctx, t, back).(protocol.Welcome)
+	if !ok || bw.ClientID != w.ClientID || bw.ResumeToken != w.ResumeToken || len(bw.Members) != 2 || !slices.ContainsFunc(bw.Members, func(m protocol.Member) bool { return m.ClientID == w.ClientID && m.Host }) {
+		t.Fatalf("alice again: got %+v, want her place back as host", bw)
 	}
 }

@@ -23,6 +23,32 @@
     }
   },
   {
+    "name": "join with clientId and resumeToken",
+    "direction": "client",
+    "valid": true,
+    "message": {
+      "type": "join",
+      "protocolVersion": 1,
+      "roomId": "movie-night",
+      "name": "Ryan",
+      "clientId": "3f2b8c1e-aa10-4c8e-9d1f-0b7e2a6c5d44",
+      "resumeToken": "9c4e1f0a2b7d4e6f8a1c3b5d7e9f0a2b"
+    }
+  },
+  {
+    "name": "join with a bad resumeToken",
+    "direction": "client",
+    "valid": false,
+    "message": {
+      "type": "join",
+      "protocolVersion": 1,
+      "roomId": "movie-night",
+      "name": "Ryan",
+      "clientId": "3f2b8c1e-aa10-4c8e-9d1f-0b7e2a6c5d44",
+      "resumeToken": "no spaces!"
+    }
+  },
+  {
     "name": "join ignores unknown fields",
     "direction": "client",
     "valid": true,
@@ -526,6 +552,32 @@
           "name": "Ryan"
         }
       ]
+    }
+  },
+  {
+    "name": "welcome with resumeToken",
+    "direction": "server",
+    "valid": true,
+    "message": {
+      "type": "welcome",
+      "clientId": "client-a1",
+      "roomId": "movie-night",
+      "serverTime": 1760300000123,
+      "state": {
+        "mediaUrl": "https://www.youtube.com/watch?v=abc",
+        "playing": true,
+        "position": 12.5,
+        "updatedAt": 1760300000000,
+        "rate": 1,
+        "version": 3
+      },
+      "members": [
+        {
+          "clientId": "client-a1",
+          "name": "Ryan"
+        }
+      ],
+      "resumeToken": "9c4e1f0a2b7d4e6f8a1c3b5d7e9f0a2b"
     }
   },
   {

@@ -61,24 +61,24 @@ sets it with `media`.
 
 ## Identifiers
 
-`roomId` and `clientId` are 4–64 characters of `A–Z a–z 0–9 _ -`.
+`roomId`, `clientId` and `resumeToken` are 4–64 characters of `A–Z a–z 0–9 _ -`.
 `name` (a display name) is 1–32 characters after trimming whitespace.
 
 ## Client → server
 
-| `type`      | Fields                                           | Meaning                                                               |
-| ----------- | ------------------------------------------------ | --------------------------------------------------------------------- |
-| `join`      | `protocolVersion`, `roomId`, `name`, `clientId?` | Join (or create) a room. Send `clientId` to resume after a reconnect. |
-| `play`      | `baseVersion`, `position`                        | Start playing from `position`.                                        |
-| `pause`     | `baseVersion`, `position`                        | Pause at `position`.                                                  |
-| `seek`      | `baseVersion`, `position`                        | Jump to `position`, keeping play/pause as is.                         |
-| `rate`      | `baseVersion`, `rate`                            | Change the playback speed (see below).                                |
-| `media`     | `baseVersion`, `mediaUrl`                        | Switch the room to another video (see below).                         |
-| `ping`      | `clientTime`, `rttMs?`                           | Clock sync probe; `clientTime` is the client's local time in ms.      |
-| `buffering` | `buffering`                                      | Whether this client's video is stalled loading (see below).           |
-| `chat`      | `text`                                           | Send a chat message to the room (1–500 characters after trimming).    |
-| `control`   | `hostOnly`                                       | Turn host-only mode on or off (host only, see below).                 |
-| `duration`  | `duration`                                       | How long this client's video is (see Video lengths below).            |
+| `type`      | Fields                                                           | Meaning                                                                                 |
+| ----------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `join`      | `protocolVersion`, `roomId`, `name`, `clientId?`, `resumeToken?` | Join (or create) a room. Send `clientId` and `resumeToken` to resume after a reconnect. |
+| `play`      | `baseVersion`, `position`                                        | Start playing from `position`.                                                          |
+| `pause`     | `baseVersion`, `position`                                        | Pause at `position`.                                                                    |
+| `seek`      | `baseVersion`, `position`                                        | Jump to `position`, keeping play/pause as is.                                           |
+| `rate`      | `baseVersion`, `rate`                                            | Change the playback speed (see below).                                                  |
+| `media`     | `baseVersion`, `mediaUrl`                                        | Switch the room to another video (see below).                                           |
+| `ping`      | `clientTime`, `rttMs?`                                           | Clock sync probe; `clientTime` is the client's local time in ms.                        |
+| `buffering` | `buffering`                                                      | Whether this client's video is stalled loading (see below).                             |
+| `chat`      | `text`                                                           | Send a chat message to the room (1–500 characters after trimming).                      |
+| `control`   | `hostOnly`                                                       | Turn host-only mode on or off (host only, see below).                                   |
+| `duration`  | `duration`                                                       | How long this client's video is (see Video lengths below).                              |
 
 `rttMs` on a `ping` is the client's current round-trip estimate in ms
 (`0`–`60000`), sent once it has one. The server uses it to choose the lead
@@ -86,14 +86,14 @@ for scheduled starts.
 
 ## Server → client
 
-| `type`     | Fields                                                 | Meaning                                                                                                                                                        |
-| ---------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `welcome`  | `clientId`, `roomId`, `serverTime`, `state`, `members` | Reply to `join`: full snapshot for a new, late or reconnecting client.                                                                                         |
-| `state`    | `state`, `cause`                                       | Broadcast after every applied intent. `cause` is `{ "action": "play" \| "pause" \| "seek" \| "rate" \| "media" \| "buffering" \| "control", "by": clientId }`. |
-| `presence` | `members`                                              | The member list changed (someone joined, left, or started or stopped buffering).                                                                               |
-| `pong`     | `clientTime`, `serverTime`                             | Reply to `ping`: echoes `clientTime`; `serverTime` is server time when replying.                                                                               |
-| `chat`     | `from`, `name`, `text`, `sentAt`                       | A member's chat message (see Chat below).                                                                                                                      |
-| `error`    | `code`, `message`                                      | `code` is one of `bad_message`, `unsupported_version`, `room_full`, `not_joined`, `not_host`.                                                                  |
+| `type`     | Fields                                                                | Meaning                                                                                                                                                        |
+| ---------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `welcome`  | `clientId`, `resumeToken`, `roomId`, `serverTime`, `state`, `members` | Reply to `join`: full snapshot for a new, late or reconnecting client. `resumeToken` is sent only to this client (see Other rules).                            |
+| `state`    | `state`, `cause`                                                      | Broadcast after every applied intent. `cause` is `{ "action": "play" \| "pause" \| "seek" \| "rate" \| "media" \| "buffering" \| "control", "by": clientId }`. |
+| `presence` | `members`                                                             | The member list changed (someone joined, left, or started or stopped buffering).                                                                               |
+| `pong`     | `clientTime`, `serverTime`                                            | Reply to `ping`: echoes `clientTime`; `serverTime` is server time when replying.                                                                               |
+| `chat`     | `from`, `name`, `text`, `sentAt`                                      | A member's chat message (see Chat below).                                                                                                                      |
+| `error`    | `code`, `message`                                                     | `code` is one of `bad_message`, `unsupported_version`, `room_full`, `not_joined`, `not_host`.                                                                  |
 
 A member is `{ "clientId": "...", "name": "...", "buffering": true, "host": true, "duration": 5421.3 }`;
 `buffering` and `host` are left out when false, `duration` when unknown.
@@ -175,8 +175,14 @@ pauses and resumes the room for everyone, and anyone can chat.
 
 A connection joins one room; a second `join` on it is a `bad_message`. Sending
 `play`, `pause` or `seek` before joining is `not_joined`. A room holds up to 16
-members (`room_full` beyond that); a `join` with a `clientId` already in the
-room replaces that member's old connection.
+members (`room_full` beyond that).
+
+Every member sees everyone's `clientId`, so a `clientId` alone can't take
+anyone's place. A `join` with a `clientId` already in the room replaces that
+member's old connection only when it also brings the `resumeToken` their last
+`welcome` gave them; otherwise the joiner gets a new `clientId` and token and
+joins as someone new. A `join` with a `clientId` nobody in the room has keeps
+it (and its `resumeToken`, if sent).
 
 A room that has had nobody in it for 10 minutes is forgotten: its state and
 chat are dropped, and the next `join` with its `roomId` starts a fresh room.

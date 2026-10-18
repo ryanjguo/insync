@@ -3,6 +3,7 @@
 package room
 
 import (
+	"crypto/subtle"
 	"errors"
 	"math"
 	"slices"
@@ -31,6 +32,10 @@ const (
 
 // ErrFull is returned by Join when the room already has MaxMembers members.
 var ErrFull = errors.New("room is full")
+
+// ErrTaken is returned by Join when the client ID belongs to someone in the
+// room and the resume token isn't theirs. Join again with a new client ID.
+var ErrTaken = errors.New("client ID is taken")
 
 // ErrGone is returned by Join when the room was removed from its Registry
 // for being empty. Get the room again from the Registry and join that.
@@ -96,11 +101,14 @@ type Event interface{ isEvent() }
 // Joined is sent only to the member who just joined: everything they need to
 // catch up.
 type Joined struct {
-	RoomID     string
-	ClientID   string
-	ServerTime int64
-	State      State
-	Members    []Member
+	RoomID   string
+	ClientID string
+	// ResumeToken is the secret that lets this member take their place back
+	// after a reconnect. Only they are told it.
+	ResumeToken string
+	ServerTime  int64
+	State       State
+	Members     []Member
 }
 
 // StateChanged is sent to every member after an action is applied, including
@@ -138,6 +146,7 @@ type Peer interface {
 
 type member struct {
 	name      string
+	token     string // resume token: proves a rejoin is this member
 	peer      Peer
 	joined    uint64 // join order, for a stable member list
 	buffering bool
@@ -179,21 +188,28 @@ func (r *Room) Snapshot() State {
 	return r.state
 }
 
-// Join adds a member, sends them Joined and the recent chat, and tells everyone else. Joining with a
-// client ID that is already in the room (a reconnect) replaces the old peer.
-func (r *Room) Join(clientID, name string, p Peer, nowMs int64) error {
+// Join adds a member, sends them Joined and the recent chat, and tells
+// everyone else. Joining with a client ID that is already in the room (a
+// reconnect) replaces the old peer, but only with that member's resume token:
+// otherwise it fails with ErrTaken, since every member's client ID is visible
+// to the whole room. A new member keeps token as their resume token.
+func (r *Room) Join(clientID, token, name string, p Peer, nowMs int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.gone {
 		return ErrGone
 	}
-	if _, rejoin := r.members[clientID]; !rejoin && len(r.members) >= MaxMembers {
+	old, rejoin := r.members[clientID]
+	if rejoin && subtle.ConstantTimeCompare([]byte(old.token), []byte(token)) != 1 {
+		return ErrTaken
+	}
+	if !rejoin && len(r.members) >= MaxMembers {
 		return ErrFull
 	}
 	r.emptySince = 0
 	r.joinSeen++
-	m := &member{name: name, peer: p, joined: r.joinSeen}
-	if old, rejoin := r.members[clientID]; rejoin {
+	m := &member{name: name, token: token, peer: p, joined: r.joinSeen}
+	if rejoin {
 		// Still buffering until the member says otherwise: it reports again on rejoining.
 		m.buffering = old.buffering
 		m.rttMs = old.rttMs
@@ -204,7 +220,7 @@ func (r *Room) Join(clientID, name string, p Peer, nowMs int64) error {
 		r.host = clientID
 	}
 	members := r.memberList()
-	p.Send(Joined{RoomID: r.ID, ClientID: clientID, ServerTime: nowMs, State: r.state, Members: members})
+	p.Send(Joined{RoomID: r.ID, ClientID: clientID, ResumeToken: token, ServerTime: nowMs, State: r.state, Members: members})
 	for _, line := range r.chat {
 		p.Send(line)
 	}

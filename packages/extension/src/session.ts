@@ -127,6 +127,8 @@ export class RoomSession {
   private joinedAt = 0;
   /** Local time the server was last heard from. */
   private lastHeard: number;
+  /** The secret from the last welcome that lets a rejoin take this member's place back. */
+  private resumeToken: string | null = null;
   private closed = false;
   /** Whether this tab's video is stalled loading, as last told by setBuffering. */
   private buffering = false;
@@ -168,6 +170,8 @@ export class RoomSession {
         name: this.opts.name,
       };
       if (this.snap.clientId) join.clientId = this.snap.clientId;
+      if (this.snap.clientId && this.resumeToken)
+        join.resumeToken = this.resumeToken;
       this.send(join);
       // A rejoining member keeps its old flag on the server, which may be stale.
       if (this.buffering || this.snap.clientId)
@@ -323,6 +327,7 @@ export class RoomSession {
       case "welcome":
         this.attempts = 0;
         this.joinedAt = msg.serverTime;
+        this.resumeToken = msg.resumeToken ?? null;
         this.update({
           status: "joined",
           clientId: msg.clientId,

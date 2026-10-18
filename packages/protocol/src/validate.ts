@@ -193,6 +193,8 @@ export function parseClientMessage(raw: unknown): ParseResult<ClientMessage> {
         };
         if (o.clientId !== undefined && o.clientId !== null)
           msg.clientId = id(o, "clientId", p);
+        if (o.resumeToken !== undefined && o.resumeToken !== null)
+          msg.resumeToken = id(o, "resumeToken", p);
         return msg;
       }
       case "play":
@@ -262,8 +264,8 @@ export function parseServerMessage(raw: unknown): ParseResult<ServerMessage> {
     const o = decode(raw);
     const p = "message";
     switch (o.type) {
-      case "welcome":
-        return {
+      case "welcome": {
+        const msg: ServerMessage = {
           type: "welcome",
           clientId: id(o, "clientId", p),
           roomId: id(o, "roomId", p),
@@ -271,6 +273,10 @@ export function parseServerMessage(raw: unknown): ParseResult<ServerMessage> {
           state: roomState(field(o, "state", p), `${p}.state`),
           members: members(o, "members", p),
         };
+        if (o.resumeToken !== undefined && o.resumeToken !== null)
+          msg.resumeToken = id(o, "resumeToken", p);
+        return msg;
+      }
       case "state": {
         const cause = asObject(field(o, "cause", p), `${p}.cause`);
         const action = string(cause, "action", `${p}.cause`);

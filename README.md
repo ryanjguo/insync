@@ -254,7 +254,10 @@ Chromium you already have.
   anyone: that tab sits out and jumps to the room when the ad ends.
 - **Joins and reconnects get a snapshot.** A joining or reconnecting tab gets
   the room's full state and seeks to where the room is now. A dropped
-  connection retries with backoff and rejoins as the same member.
+  connection retries with backoff and rejoins as the same member. Everyone's
+  member ID is visible to the room, so rejoining also takes a private resume
+  token the server gave only that member; without it, an ID someone else is
+  using joins as a new member instead of taking over theirs (or the host's).
 - **Sync logic has no DOM.** Clock sync and drift control live in
   `sync-core`, so the harness runs the exact code the extension runs, on a
   simulated clock.

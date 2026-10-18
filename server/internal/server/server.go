@@ -239,16 +239,25 @@ func (s *Server) join(c *client, m protocol.Join, nowMs int64) {
 		c.send(protocol.Error{Code: protocol.ErrBadMessage, Message: "already joined; open a new connection to switch rooms"})
 		return
 	}
-	id := m.ClientID
+	id, token := m.ClientID, m.ResumeToken
 	if id == "" {
-		id = newClientID()
+		id = newID()
+	}
+	if token == "" {
+		token = newID()
 	}
 	rm := s.rooms.GetOrCreate(m.RoomID)
-	err := rm.Join(id, m.Name, c, nowMs)
+	err := rm.Join(id, token, m.Name, c, nowMs)
 	if errors.Is(err, room.ErrGone) {
 		// Swept between getting it and joining: the registry has a fresh one now.
 		rm = s.rooms.GetOrCreate(m.RoomID)
-		err = rm.Join(id, m.Name, c, nowMs)
+		err = rm.Join(id, token, m.Name, c, nowMs)
+	}
+	if errors.Is(err, room.ErrTaken) {
+		// Someone else's ID (anyone in the room can see them all), or a token
+		// that isn't theirs: join as someone new instead of taking their place.
+		id, token = newID(), newID()
+		err = rm.Join(id, token, m.Name, c, nowMs)
 	}
 	if err != nil {
 		code := protocol.ErrBadMessage
@@ -266,11 +275,12 @@ func toMessage(e room.Event) protocol.ServerMessage {
 	switch e := e.(type) {
 	case room.Joined:
 		return protocol.Welcome{
-			ClientID:   e.ClientID,
-			RoomID:     e.RoomID,
-			ServerTime: e.ServerTime,
-			State:      e.State,
-			Members:    toMembers(e.Members),
+			ClientID:    e.ClientID,
+			ResumeToken: e.ResumeToken,
+			RoomID:      e.RoomID,
+			ServerTime:  e.ServerTime,
+			State:       e.State,
+			Members:     toMembers(e.Members),
 		}
 	case room.StateChanged:
 		return protocol.StateUpdate{State: e.State, Cause: protocol.Cause{Action: string(e.Action), By: e.By}}
@@ -291,7 +301,8 @@ func toMembers(ms []room.Member) []protocol.Member {
 	return out
 }
 
-func newClientID() string {
+// newID returns a random client ID or resume token.
+func newID() string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)

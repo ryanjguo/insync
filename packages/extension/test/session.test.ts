@@ -76,6 +76,7 @@ describe("RoomSession", () => {
     socket.receive({
       type: "welcome",
       clientId: "client-1",
+      resumeToken: "secret-1",
       roomId: "movie-night",
       serverTime,
       state: paused,
@@ -359,6 +360,7 @@ describe("RoomSession", () => {
       expect(socket.sent[0]).toMatchObject({
         type: "join",
         clientId: "client-1",
+        resumeToken: "secret-1",
       });
       welcome();
       expect(session.snapshot.status).toBe("joined");
