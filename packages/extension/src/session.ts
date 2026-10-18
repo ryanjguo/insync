@@ -64,10 +64,21 @@ export function isHost(s: SessionSnapshot): boolean {
   return s.members.some((m) => m.clientId === s.clientId && m.host === true);
 }
 
+/** What a new session needs to come back as the same member. */
+export interface Resume {
+  clientId: string;
+  resumeToken: string | null;
+}
+
 export interface SessionOptions {
   url: string;
   roomId: string;
   name: string;
+  /**
+   * Come back as this member, as after the service worker restarts. The
+   * session then keeps retrying a server it can't reach, as when reconnecting.
+   */
+  resume?: Resume;
   createSocket: (url: string) => SocketLike;
   /** Local clock in ms. */
   now?: () => number;
@@ -128,7 +139,7 @@ export class RoomSession {
   /** Local time the server was last heard from. */
   private lastHeard: number;
   /** The secret from the last welcome that lets a rejoin take this member's place back. */
-  private resumeToken: string | null = null;
+  private resumeToken: string | null;
   private closed = false;
   /** Whether this tab's video is stalled loading, as last told by setBuffering. */
   private buffering = false;
@@ -146,7 +157,7 @@ export class RoomSession {
     this.snap = {
       status: "connecting",
       roomId: opts.roomId,
-      clientId: null,
+      clientId: opts.resume?.clientId ?? null,
       state: null,
       members: [],
       offsetMs: 0,
@@ -156,6 +167,7 @@ export class RoomSession {
       chat: [],
       refused: 0,
     };
+    this.resumeToken = opts.resume?.resumeToken ?? null;
     this.lastHeard = this.now();
     this.socket = this.connect();
   }
@@ -221,6 +233,12 @@ export class RoomSession {
 
   get snapshot(): SessionSnapshot {
     return this.snap;
+  }
+
+  /** How to come back as this member, once the server has given an ID. */
+  get resume(): Resume | null {
+    const clientId = this.snap.clientId;
+    return clientId ? { clientId, resumeToken: this.resumeToken } : null;
   }
 
   /** Server time now, by the current offset estimate. */

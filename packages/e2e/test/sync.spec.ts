@@ -3,7 +3,8 @@
 // link, and playing, pausing, seeking and changing speed in one shows up in
 // the other. In a host-only room, only the host's changes do, and a tab
 // watching a different-length video is noticed. Each tab shows what the
-// other did over its video.
+// other did over its video, and tabs rejoin their room after Chrome stops the
+// extension's service worker.
 
 import {
   chromium,
@@ -377,4 +378,73 @@ test("a tab shows what the other one did over its video", async () => {
   await expect.poll(() => notices(a)).toContain("jumped to 1:15");
   // A tab isn't told about its own changes.
   expect(await notices(b)).not.toContain("jumped");
+});
+
+/** Stop the extension's service worker, as Chrome does when it likes. */
+async function stopServiceWorker(): Promise<void> {
+  const cdp = await context.browser()!.newBrowserCDPSession();
+  const { targetInfos } = (await cdp.send("Target.getTargets")) as {
+    targetInfos: { targetId: string; type: string; url: string }[];
+  };
+  const worker = targetInfos.find(
+    (t) =>
+      t.type === "service_worker" &&
+      t.url.startsWith(`chrome-extension://${extensionId}/`),
+  );
+  if (!worker) throw new Error("no service worker running");
+  await cdp.send("Target.closeTarget", { targetId: worker.targetId });
+  // Wait until it's gone, so nothing below talks to the old one.
+  for (;;) {
+    const { targetInfos } = (await cdp.send("Target.getTargets")) as {
+      targetInfos: { targetId: string }[];
+    };
+    if (!targetInfos.some((t) => t.targetId === worker.targetId)) break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  await cdp.detach();
+}
+
+/**
+ * The member IDs of the tabs joined to `room`, sorted, once each sees every
+ * one of them in its member list (null until then).
+ */
+async function joinedIds(status: Page, room: string): Promise<string[] | null> {
+  return status.evaluate(async (room) => {
+    const ids: string[] = [];
+    let seen = 0;
+    for (const t of await chrome.tabs.query({})) {
+      const s = await chrome.runtime.sendMessage({
+        kind: "status",
+        tabId: t.id,
+      });
+      if (s?.session?.status !== "joined" || s.session.roomId !== room)
+        continue;
+      ids.push(s.session.clientId);
+      seen = Math.max(seen, s.session.members.length);
+    }
+    return seen === ids.length ? ids.sort() : null;
+  }, room);
+}
+
+test("tabs go back to their room after the service worker restarts", async () => {
+  const status = await context.newPage();
+  await status.goto(`chrome-extension://${extensionId}/popup.html`);
+  const ids = () => joinedIds(status, "e2e-restart");
+
+  const a = await context.newPage();
+  await a.goto(inviteTo("e2e-restart"));
+  const b = await context.newPage();
+  await b.goto(inviteTo("e2e-restart"));
+  await expect.poll(async () => (await ids())?.length).toBe(2);
+  const before = await ids();
+
+  await stopServiceWorker();
+  // Both tabs come back on their own, as the same members.
+  await expect.poll(ids, { timeout: 15_000 }).toEqual(before);
+
+  // And still follow each other.
+  await control(a, { do: "seek", to: 40 });
+  await control(a, { do: "play" });
+  await expect.poll(async () => (await media(b)).paused).toBe(false);
+  await expect.poll(() => inSync(a, b)).toBe(true);
 });

@@ -16,12 +16,19 @@ import {
   type TabStatus,
 } from "./messages";
 import { chatNotice, presenceNotices, stateNotice } from "./notices";
-import { RoomSession, canControl, type SessionSnapshot } from "./session";
+import { forgetRoom, saveRoom, savedRooms, type SavedRoom } from "./saved";
+import {
+  RoomSession,
+  canControl,
+  type Resume,
+  type SessionSnapshot,
+} from "./session";
 
 /** Keepalive and clock-resync interval. A WebSocket message every 20 s also keeps the service worker alive. */
 const PING_INTERVAL_MS = 20_000;
 
 interface Tab {
+  id: number;
   session: RoomSession | null;
   /** The server the session connects to. */
   serverUrl: string | null;
@@ -39,6 +46,8 @@ interface Tab {
   /** The last update sent to the tab's frames. */
   sent: RoomUpdate | null;
   pinger?: ReturnType<typeof setInterval>;
+  /** The member ID last saved for a restart, to save again only when it changes. */
+  savedClientId: string | null;
 }
 
 const tabs = new Map<number, Tab>();
@@ -47,6 +56,7 @@ function tab(id: number): Tab {
   let t = tabs.get(id);
   if (!t) {
     const entry: Tab = {
+      id,
       session: null,
       serverUrl: null,
       ports: new Set(),
@@ -56,6 +66,7 @@ function tab(id: number): Tab {
       adShowing: false,
       unread: 0,
       sent: null,
+      savedClientId: null,
       follower: new MediaFollower({
         navigate: (url) => {
           chrome.tabs.update(id, { url }).catch(() => {});
@@ -146,23 +157,44 @@ function setUnread(tabId: number, t: Tab, unread: number): void {
 
 function leave(t: Tab): void {
   clearInterval(t.pinger);
-  t.session?.close();
+  const session = t.session;
+  // Cleared first, so the closing session's last change isn't saved again.
   t.session = null;
+  t.savedClientId = null;
+  if (session) {
+    forgetRoom(chrome.storage.session, t.id).catch(() => {});
+    session.close();
+  }
   t.playBlocked = false;
   t.follower.setRoom(null);
   push(t);
 }
 
+/** Save the tab's room, so a restarted service worker can put the tab back. */
+function save(t: Tab, session: RoomSession, req: SavedRoom): void {
+  const resume = session.resume;
+  t.savedClientId = resume?.clientId ?? null;
+  saveRoom(chrome.storage.session, t.id, { ...req, resume }).catch(() => {});
+}
+
 function join(
   tabId: number,
   req: Extract<PopupRequest, { kind: "join" }>,
+  resume?: Resume,
 ): void {
   const t = tab(tabId);
   leave(t);
+  const saved: SavedRoom = {
+    roomId: req.roomId,
+    serverUrl: req.serverUrl,
+    name: req.name,
+    resume: null,
+  };
   const session = new RoomSession({
     url: req.serverUrl,
     roomId: req.roomId,
     name: req.name,
+    resume,
     createSocket: (url) => new WebSocket(url),
     onChat: (line, history) => {
       if (history) return;
@@ -183,6 +215,10 @@ function join(
         notify(t, text);
     },
     onChange: (snap) => {
+      // A new member ID (the first welcome, or a new one after the server
+      // restarted) means new resume details to save.
+      if (t.session === session && snap.clientId !== t.savedClientId)
+        save(t, session, saved);
       t.follower.setRoom(
         inRoom(snap) ? (snap.state?.mediaUrl ?? null) : null,
         snap.state?.version === 0,
@@ -192,12 +228,45 @@ function join(
   });
   t.session = session;
   t.serverUrl = req.serverUrl;
+  save(t, session, saved);
   reportBuffering(t);
   t.pinger = setInterval(() => session.ping(), PING_INTERVAL_MS);
   // Ports drop whenever the service worker goes idle, so ask the tab's frames
   // to reconnect. Frames without a video, or without our script, ignore it.
   chrome.tabs.sendMessage(tabId, CONNECT_REQUEST).catch(() => {});
 }
+
+/**
+ * Put tabs back in the rooms they were in before the service worker
+ * restarted, as the same members.
+ */
+async function restore(): Promise<void> {
+  for (const [tabId, room] of await savedRooms(chrome.storage.session)) {
+    const open = await chrome.tabs.get(tabId).then(
+      () => true,
+      () => false,
+    );
+    if (!open) {
+      await forgetRoom(chrome.storage.session, tabId);
+      continue;
+    }
+    // Joined a room since this worker started.
+    if (tabs.get(tabId)?.session) continue;
+    join(
+      tabId,
+      {
+        kind: "join",
+        tabId,
+        roomId: room.roomId,
+        name: room.name,
+        serverUrl: room.serverUrl,
+      },
+      room.resume ?? undefined,
+    );
+  }
+}
+
+restore().catch(() => {});
 
 /**
  * The tab was opened from an invite link: join its room with the saved name
