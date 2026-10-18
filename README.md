@@ -128,6 +128,17 @@ undone in their tab instead of reaching the room, and their popup says who is
 in control. If the host leaves, the person who has been in the room longest
 takes over.
 
+### Seeing who did what
+
+When someone else plays, pauses, seeks, changes the speed, switches video or
+turns host-only on or off, a short notice shows in the top right corner of the
+video for a few seconds, for example "Sam paused at 12:34". Notices also say
+who joined or left, show chat messages, and say who the room is waiting for
+while it pauses for buffering. They show in fullscreen too, unless the site
+puts the bare `<video>` element in fullscreen, which leaves no room for
+anything else. Untick **Show what others do on the video** in the popup to
+turn them off.
+
 ### Inviting someone
 
 Once you're in a room, click **Copy invite link** in the popup and send the

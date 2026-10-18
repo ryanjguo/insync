@@ -425,3 +425,48 @@ describe("RoomSession", () => {
     });
   });
 });
+
+describe("RoomSession room events", () => {
+  it("reports new states with their cause, and member list changes", () => {
+    const socket = new FakeSocket();
+    const states: string[] = [];
+    const presence: [number, number][] = [];
+    new RoomSession({
+      url: "ws://localhost:8080/ws",
+      roomId: "movie-night",
+      name: "Ryan",
+      createSocket: () => socket,
+      onChange: () => {},
+      onState: (msg) =>
+        states.push(`${msg.cause.action} v${msg.state.version}`),
+      onPresence: (before, after) =>
+        presence.push([before.length, after.length]),
+    });
+    const me = { clientId: "client-1", name: "Ryan" };
+    socket.receive({
+      type: "welcome",
+      clientId: "client-1",
+      roomId: "movie-night",
+      serverTime: 5_000,
+      state: paused,
+      members: [me],
+    });
+    socket.receive({
+      type: "presence",
+      members: [me, { clientId: "client-2", name: "Alex" }],
+    });
+    socket.receive({
+      type: "state",
+      state: { ...paused, version: 2 },
+      cause: { action: "pause", by: "client-2" },
+    });
+    // An older state is dropped, so it isn't reported either.
+    socket.receive({
+      type: "state",
+      state: { ...paused, version: 1 },
+      cause: { action: "seek", by: "client-2" },
+    });
+    expect(states).toEqual(["pause v2"]);
+    expect(presence).toEqual([[1, 2]]);
+  });
+});

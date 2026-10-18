@@ -7,6 +7,9 @@ import type { SessionSnapshot } from "./session";
 /** chrome.storage.local key: whether pages show the debug overlay. */
 export const DEBUG_OVERLAY_KEY = "debugOverlay";
 
+/** chrome.storage.local key: false when pages shouldn't show notices of what others do. On by default. */
+export const NOTICES_KEY = "notices";
+
 /** Name of the port a content script opens once its frame has a video. */
 export const PLAYER_PORT = "player";
 
@@ -27,6 +30,12 @@ export interface RoomUpdate {
   canControl: boolean;
   /** Bumped when the server refuses a change: go back to the room's state. */
   refused: number;
+}
+
+/** Service worker -> content script: something happened in the room worth showing over the video. */
+export interface Notice {
+  kind: "notice";
+  text: string;
 }
 
 /** Content script -> service worker. */

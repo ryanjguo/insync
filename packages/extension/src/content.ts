@@ -7,12 +7,15 @@ import { parseInvite } from "./invite";
 import {
   CONNECT_REQUEST,
   DEBUG_OVERLAY_KEY,
+  NOTICES_KEY,
   PLAYER_PORT,
   type InviteReport,
+  type Notice,
   type PageReport,
   type PlayerEvent,
   type RoomUpdate,
 } from "./messages";
+import { NoticeStack } from "./notices";
 import { DebugOverlay, formatOverlay } from "./overlay";
 import { PlayerSync } from "./player";
 import { findMainVideo, isAdShowing, isYouTube } from "./video";
@@ -75,7 +78,12 @@ function connect(): void {
   port = chrome.runtime.connect({ name: PLAYER_PORT });
   if (sync?.isHeld) post({ kind: "ad", showing: true });
   reportDuration(true);
-  port.onMessage.addListener((msg: RoomUpdate) => {
+  port.onMessage.addListener((msg: RoomUpdate | Notice) => {
+    if (msg.kind === "notice") {
+      if (showNotices)
+        (notices ??= new NoticeStack(() => video)).show(msg.text);
+      return;
+    }
     // After a rejoin the room may have started over (a restarted server), so
     // its versions can be lower than what we had: forget the old state first.
     if (msg.joins !== room.joins) sync?.apply(null);
@@ -140,6 +148,15 @@ new MutationObserver(() => {
   }, 250);
 }).observe(document.documentElement, { childList: true, subtree: true });
 
+// Notices of what others in the room do, unless turned off in the popup.
+let notices: NoticeStack | null = null;
+let showNotices = true;
+
+chrome.storage.local
+  .get(NOTICES_KEY)
+  .then((saved) => (showNotices = saved[NOTICES_KEY] !== false))
+  .catch(() => {});
+
 // Debug overlay, in frames with a video, while the popup's toggle is on.
 let overlay: DebugOverlay | null = null;
 let overlayTimer: ReturnType<typeof setInterval> | undefined;
@@ -169,6 +186,12 @@ chrome.storage.local
   .then((saved) => setOverlay(saved[DEBUG_OVERLAY_KEY] === true))
   .catch(() => {});
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local") return;
   const change = changes[DEBUG_OVERLAY_KEY];
-  if (area === "local" && change) setOverlay(change.newValue === true);
+  if (change) setOverlay(change.newValue === true);
+  const noticesChange = changes[NOTICES_KEY];
+  if (noticesChange) {
+    showNotices = noticesChange.newValue !== false;
+    if (!showNotices) notices?.hide();
+  }
 });

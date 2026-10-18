@@ -2,7 +2,8 @@
 // server, on a page with a <video>. Two tabs join one room through an invite
 // link, and playing, pausing, seeking and changing speed in one shows up in
 // the other. In a host-only room, only the host's changes do, and a tab
-// watching a different-length video is noticed.
+// watching a different-length video is noticed. Each tab shows what the
+// other did over its video.
 
 import {
   chromium,
@@ -351,4 +352,29 @@ test("everyone sees each member's video length", async () => {
     document.querySelector("video")!.src = "short.wav";
   });
   await expect.poll(lengths).toEqual([MEDIA_SEC, SHORT_MEDIA_SEC]);
+});
+
+test("a tab shows what the other one did over its video", async () => {
+  const status = await context.newPage();
+  await status.goto(`chrome-extension://${extensionId}/popup.html`);
+  const joined = () => joinedTabs(status, "e2e-notices");
+
+  const a = await context.newPage();
+  await a.goto(inviteTo("e2e-notices"));
+  await expect.poll(joined).toBe(1);
+  const b = await context.newPage();
+  await b.goto(inviteTo("e2e-notices"));
+  await expect.poll(joined).toBe(2);
+  const notices = (page: Page) =>
+    page.evaluate(
+      () =>
+        document.querySelector("[data-insync-notices]")?.shadowRoot
+          ?.textContent ?? "",
+    );
+  await expect.poll(() => notices(a)).toContain("joined");
+
+  await control(b, { do: "seek", to: 75 });
+  await expect.poll(() => notices(a)).toContain("jumped to 1:15");
+  // A tab isn't told about its own changes.
+  expect(await notices(b)).not.toContain("jumped");
 });
