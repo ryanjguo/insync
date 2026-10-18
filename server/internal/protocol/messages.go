@@ -96,8 +96,10 @@ type Join struct {
 	ProtocolVersion int64  `json:"protocolVersion"`
 	RoomID          string `json:"roomId"`
 	Name            string `json:"name"`
-	// ClientID is set when resuming after a reconnect.
-	ClientID string `json:"clientId,omitempty"`
+	// ClientID and ResumeToken are set when resuming after a reconnect: the
+	// ID and token the last Welcome gave.
+	ClientID    string `json:"clientId,omitempty"`
+	ResumeToken string `json:"resumeToken,omitempty"`
 }
 
 // Intent is a play, pause or seek request. Action is one of TypePlay, TypePause, TypeSeek.
@@ -181,11 +183,15 @@ func (Duration) ClientType() string { return TypeDuration }
 
 // Welcome answers Join with a full snapshot for a new, late or reconnecting client.
 type Welcome struct {
-	ClientID   string    `json:"clientId"`
-	RoomID     string    `json:"roomId"`
-	ServerTime int64     `json:"serverTime"`
-	State      RoomState `json:"state"`
-	Members    []Member  `json:"members"`
+	ClientID string `json:"clientId"`
+	// ResumeToken is a secret, sent only to this client, that a later Join
+	// brings with ClientID to take this member's place back. ClientID alone
+	// can't, since every member sees it.
+	ResumeToken string    `json:"resumeToken,omitempty"`
+	RoomID      string    `json:"roomId"`
+	ServerTime  int64     `json:"serverTime"`
+	State       RoomState `json:"state"`
+	Members     []Member  `json:"members"`
 }
 
 // Cause says what produced a StateUpdate (play, pause, seek, rate, media,

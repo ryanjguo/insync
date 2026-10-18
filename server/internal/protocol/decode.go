@@ -37,6 +37,9 @@ func DecodeClientMessage(data []byte) (ClientMessage, error) {
 		if r.has("clientId") {
 			m.ClientID = r.id("clientId")
 		}
+		if r.has("resumeToken") {
+			m.ResumeToken = r.id("resumeToken")
+		}
 		msg = m
 	case TypePlay, TypePause, TypeSeek:
 		msg = Intent{Action: typ, BaseVersion: r.int("baseVersion", 0), Position: r.position("position")}
@@ -80,13 +83,17 @@ func DecodeServerMessage(data []byte) (ServerMessage, error) {
 	var msg ServerMessage
 	switch typ {
 	case TypeWelcome:
-		msg = Welcome{
+		m := Welcome{
 			ClientID:   r.id("clientId"),
 			RoomID:     r.id("roomId"),
 			ServerTime: r.int("serverTime", math.MinInt64),
 			State:      r.roomState("state"),
 			Members:    r.members("members"),
 		}
+		if r.has("resumeToken") {
+			m.ResumeToken = r.id("resumeToken")
+		}
+		msg = m
 	case TypeState:
 		cause := r.object("cause")
 		m := StateUpdate{State: r.roomState("state")}
