@@ -582,3 +582,53 @@ func TestSetDuration(t *testing.T) {
 		t.Fatalf("duration after rejoining = %v, want 5400", got)
 	}
 }
+
+func TestSweepForgetsRoomsEmptyForLong(t *testing.T) {
+	g := NewRegistry()
+	busy, left, fresh := g.GetOrCreate("busy"), g.GetOrCreate("left"), g.GetOrCreate("fresh")
+	p := &recorder{}
+	if err := busy.Join("a", "A", p, 0); err != nil {
+		t.Fatal(err)
+	}
+	q := &recorder{}
+	if err := left.Join("b", "B", q, 0); err != nil {
+		t.Fatal(err)
+	}
+	left.Leave("b", q, 1000)
+
+	// "fresh" was never joined: the first sweep starts its clock.
+	if n := g.Sweep(5000, 10_000); n != 0 {
+		t.Fatalf("swept %d rooms too early", n)
+	}
+	if n := g.Sweep(11_000, 10_000); n != 1 || g.GetOrCreate("left") == left {
+		t.Fatalf("swept %d, want only the room empty since 1000", n)
+	}
+	if n := g.Sweep(15_000, 10_000); n != 1 || g.GetOrCreate("fresh") == fresh {
+		t.Fatalf("swept %d, want the room first seen empty at 5000", n)
+	}
+	if g.GetOrCreate("busy") != busy {
+		t.Fatal("a room with someone in it was swept")
+	}
+}
+
+func TestSweepSkipsRoomsRejoinedInTime(t *testing.T) {
+	g := NewRegistry()
+	r := g.GetOrCreate("abc")
+	p := &recorder{}
+	_ = r.Join("a", "A", p, 0)
+	r.Leave("a", p, 1000)
+	_ = r.Join("a", "A", p, 5000)
+	r.Leave("a", p, 9000)
+	if n := g.Sweep(12_000, 10_000); n != 0 {
+		t.Fatal("swept a room that was empty for only 3 s")
+	}
+}
+
+func TestJoinAfterSweepIsRefused(t *testing.T) {
+	g := NewRegistry()
+	r := g.GetOrCreate("abc")
+	g.Sweep(0, 0)
+	if err := r.Join("a", "A", &recorder{}, 0); !errors.Is(err, ErrGone) {
+		t.Fatalf("Join on a swept room = %v, want ErrGone", err)
+	}
+}

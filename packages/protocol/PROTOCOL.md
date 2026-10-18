@@ -177,3 +177,7 @@ A connection joins one room; a second `join` on it is a `bad_message`. Sending
 `play`, `pause` or `seek` before joining is `not_joined`. A room holds up to 16
 members (`room_full` beyond that); a `join` with a `clientId` already in the
 room replaces that member's old connection.
+
+A room that has had nobody in it for 10 minutes is forgotten: its state and
+chat are dropped, and the next `join` with its `roomId` starts a fresh room.
+Someone who comes back sooner finds it as they left it.

@@ -24,13 +24,15 @@ func main() {
 	static := flag.String("static", "", "directory to serve at / (e.g. ../testpage)")
 	flag.Parse()
 
+	app := server.New(*static)
 	srv := &http.Server{
 		Addr:              *addr,
-		Handler:           server.New(*static).Handler(),
+		Handler:           app.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	go app.SweepRooms(ctx)
 	go func() {
 		<-ctx.Done()
 		sctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
