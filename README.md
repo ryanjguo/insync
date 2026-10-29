@@ -127,7 +127,8 @@ list. The host can tick **Only the host controls playback** in the popup: from
 then on, anyone else's play, pause, seek, speed change or switch of video is
 undone in their tab instead of reaching the room, and their popup says who is
 in control. If the host leaves, the person who has been in the room longest
-takes over.
+takes over, until the host comes back: a host who rejoins within 30 seconds
+(after a dropped connection, say) is host again.
 
 ### Seeing who did what
 

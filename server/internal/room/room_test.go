@@ -575,6 +575,45 @@ func TestHost(t *testing.T) {
 	}
 }
 
+func TestHostGetsHostBackAfterBlip(t *testing.T) {
+	r := New("room")
+	alice, bob := &recorder{}, &recorder{}
+	_ = r.Join("alice", "a", "Alice", alice, 0)
+	_ = r.Join("bob", "b", "Bob", bob, 0)
+	r.Leave("alice", alice, 1000)
+	if !r.IsHost("bob") {
+		t.Fatal("want bob host while alice is away")
+	}
+
+	// Only alice's token gets her ID back while her claim lasts.
+	if err := r.Join("alice", "guess", "Mallory", &recorder{}, 2000); !errors.Is(err, ErrTaken) {
+		t.Fatalf("join as alice with the wrong token: err = %v, want ErrTaken", err)
+	}
+	if err := r.Join("alice", "a", "Alice", &recorder{}, 1000+HostGraceMs); err != nil {
+		t.Fatal(err)
+	}
+	want := []Member{{ClientID: "alice", Name: "Alice", Host: true}, {ClientID: "bob", Name: "Bob"}}
+	if mc, ok := bob.last().(MembersChanged); !ok || !slices.Equal(mc.Members, want) {
+		t.Fatalf("bob got %+v, want alice back first as host", bob.last())
+	}
+}
+
+func TestHostClaimExpires(t *testing.T) {
+	r := New("room")
+	alice := &recorder{}
+	_ = r.Join("alice", "a", "Alice", alice, 0)
+	_ = r.Join("bob", "b", "Bob", &recorder{}, 0)
+	r.Leave("alice", alice, 1000)
+
+	if err := r.Join("alice", "a", "Alice", &recorder{}, 1001+HostGraceMs); err != nil {
+		t.Fatal(err)
+	}
+	want := []Member{{ClientID: "bob", Name: "Bob", Host: true}, {ClientID: "alice", Name: "Alice"}}
+	if got := r.Members(); !slices.Equal(got, want) {
+		t.Fatalf("members = %v, want bob still host and alice back as a new member", got)
+	}
+}
+
 func TestHostOnly(t *testing.T) {
 	r, alice, bob := playingRoom(t)
 	if !r.Controls("bob") {
