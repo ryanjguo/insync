@@ -30,6 +30,11 @@ const (
 	DefaultRTTMs = 200
 )
 
+// HostGraceMs is how long a host who left keeps a claim on being host: if
+// they rejoin with their resume token in time (a dropped connection, the
+// extension restarting), host goes back to them.
+const HostGraceMs = 30_000
+
 // ErrFull is returned by Join when the room already has MaxMembers members.
 var ErrFull = errors.New("room is full")
 
@@ -165,6 +170,9 @@ type Room struct {
 	// host is the client ID of the room's host: the first member to join,
 	// handed to the longest-standing member when the host leaves.
 	host string
+	// formerHost is the host who left most recently, who becomes host again
+	// on rejoining before their claim expires.
+	formerHost formerHost
 	// waiting is true while the room is paused for buffering members and
 	// should play again once none are left.
 	waiting bool
@@ -174,6 +182,15 @@ type Room struct {
 	emptySince int64
 	// gone is set when the Registry removes the room; nobody can join it then.
 	gone bool
+}
+
+// formerHost is a host who left: who they were, the token that proves a
+// rejoin is them, their place in the member list, and when the claim ends.
+type formerHost struct {
+	id      string
+	token   string
+	joined  uint64
+	untilMs int64
 }
 
 // New returns an empty, paused room at position 0.
@@ -192,7 +209,9 @@ func (r *Room) Snapshot() State {
 // everyone else. Joining with a client ID that is already in the room (a
 // reconnect) replaces the old peer, but only with that member's resume token:
 // otherwise it fails with ErrTaken, since every member's client ID is visible
-// to the whole room. A new member keeps token as their resume token.
+// to the whole room. A new member keeps token as their resume token. A host
+// who left less than HostGraceMs ago becomes host again on rejoining with
+// their token, and nobody else can join under their ID meanwhile.
 func (r *Room) Join(clientID, token, name string, p Peer, nowMs int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -203,19 +222,33 @@ func (r *Room) Join(clientID, token, name string, p Peer, nowMs int64) error {
 	if rejoin && subtle.ConstantTimeCompare([]byte(old.token), []byte(token)) != 1 {
 		return ErrTaken
 	}
+	reclaim := false
+	if !rejoin && r.formerHost.id == clientID && nowMs <= r.formerHost.untilMs {
+		// The host who just left: only they can come back under this ID.
+		if subtle.ConstantTimeCompare([]byte(r.formerHost.token), []byte(token)) != 1 {
+			return ErrTaken
+		}
+		reclaim = true
+	}
 	if !rejoin && len(r.members) >= MaxMembers {
 		return ErrFull
 	}
 	r.emptySince = 0
 	m := &member{name: name, token: token, peer: p}
-	if rejoin {
+	switch {
+	case rejoin:
 		// Keep their place in the member list and in line to be host.
 		m.joined = old.joined
 		// Still buffering until the member says otherwise: it reports again on rejoining.
 		m.buffering = old.buffering
 		m.rttMs = old.rttMs
 		m.duration = old.duration
-	} else {
+	case reclaim:
+		// Back in time to be host again, in their old place.
+		m.joined = r.formerHost.joined
+		r.host = clientID
+		r.formerHost = formerHost{}
+	default:
 		r.joinSeen++
 		m.joined = r.joinSeen
 	}
@@ -247,6 +280,7 @@ func (r *Room) Leave(clientID string, p Peer, nowMs int64) {
 		r.emptySince = nowMs
 	}
 	if r.host == clientID {
+		r.formerHost = formerHost{id: clientID, token: m.token, joined: m.joined, untilMs: nowMs + HostGraceMs}
 		r.host = r.oldestMember()
 	}
 	r.broadcast(MembersChanged{Members: r.memberList()}, "")
