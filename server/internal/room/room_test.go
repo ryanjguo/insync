@@ -266,6 +266,25 @@ func TestRejoinReplacesPeer(t *testing.T) {
 	}
 }
 
+func TestRejoinKeepsPlace(t *testing.T) {
+	r := New("room")
+	alice, bob, carol := &recorder{}, &recorder{}, &recorder{}
+	_ = r.Join("alice", "a", "Alice", alice, 0)
+	_ = r.Join("bob", "b", "Bob", bob, 0)
+	_ = r.Join("carol", "c", "Carol", carol, 0)
+
+	// Bob reconnects: he stays second in the list and next in line to be host.
+	_ = r.Join("bob", "b", "Bob", &recorder{}, 1000)
+	want := []Member{{ClientID: "alice", Name: "Alice", Host: true}, {ClientID: "bob", Name: "Bob"}, {ClientID: "carol", Name: "Carol"}}
+	if got := r.Members(); !slices.Equal(got, want) {
+		t.Fatalf("members = %v, want %v", got, want)
+	}
+	r.Leave("alice", alice, 2000)
+	if !r.IsHost("bob") {
+		t.Fatal("want bob, who joined before carol, to take over as host")
+	}
+}
+
 func TestRoomFull(t *testing.T) {
 	r := New("room")
 	for i := range MaxMembers {

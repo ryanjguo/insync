@@ -207,13 +207,17 @@ func (r *Room) Join(clientID, token, name string, p Peer, nowMs int64) error {
 		return ErrFull
 	}
 	r.emptySince = 0
-	r.joinSeen++
-	m := &member{name: name, token: token, peer: p, joined: r.joinSeen}
+	m := &member{name: name, token: token, peer: p}
 	if rejoin {
+		// Keep their place in the member list and in line to be host.
+		m.joined = old.joined
 		// Still buffering until the member says otherwise: it reports again on rejoining.
 		m.buffering = old.buffering
 		m.rttMs = old.rttMs
 		m.duration = old.duration
+	} else {
+		r.joinSeen++
+		m.joined = r.joinSeen
 	}
 	r.members[clientID] = m
 	if r.host == "" {
