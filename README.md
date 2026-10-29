@@ -8,7 +8,8 @@ measured sync quality: drift numbers under simulated bad networks, not just
 
 > Status: the core is done. Rooms sync play, pause, seek, speed and choice of
 > video on YouTube and other HTML5 video sites, with scheduled starts, drift
-> correction, buffering pauses, reconnects, chat and invite links. Measured
+> correction, buffering pauses, reconnects, chat and invite links, plus
+> host-only rooms and notices over the video saying who did what. Measured
 > drift is 17–46 ms at p95 once settled, under simulated bad networks (see
 > [results](#results)). The server is ready to deploy.
 
@@ -299,5 +300,11 @@ Lag spike, back in sync after the stall ended: 1.2 s, 0.3 s, 0.3 s, 1.7 s, 0.3 s
 5. Measure and ship: ~~network-impairment harness~~, ~~results table~~,
    deploy (configs ready, not live yet)
 
-Since then: host-only rooms, and a warning when people's videos differ in
-length.
+Since then:
+
+- Host-only rooms.
+- A warning when people's videos differ in length.
+- Notices over the video saying who played, paused, seeked, joined or left.
+- Resume tokens, so nobody can take over someone else's place in a room.
+- Tabs rejoin their room after Chrome restarts the extension's service worker.
+- Rooms that have been empty for 10 minutes are forgotten.
