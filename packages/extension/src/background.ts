@@ -219,6 +219,12 @@ function join(
       // restarted) means new resume details to save.
       if (t.session === session && snap.clientId !== t.savedClientId)
         save(t, session, saved);
+      // The session ended on its own (refused, or the server never answered).
+      // Keep it so the popup can say why, but stop pinging and forget the room.
+      if (t.session === session && snap.status === "closed") {
+        clearInterval(t.pinger);
+        forgetRoom(chrome.storage.session, tabId).catch(() => {});
+      }
       t.follower.setRoom(
         inRoom(snap) ? (snap.state?.mediaUrl ?? null) : null,
         snap.state?.version === 0,

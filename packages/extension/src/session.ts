@@ -4,6 +4,7 @@ import {
   type ChatLineMessage,
   type ClientMessage,
   type ControlMessage,
+  type ErrorCode,
   type IntentMessage,
   type RateMessage,
   type MediaMessage,
@@ -116,6 +117,11 @@ const RECONNECT_MAX_MS = 10_000;
  * connections that die silently, like after a laptop sleeps.
  */
 const SILENCE_MS = 45_000;
+/** Errors that refuse the join itself: a full room, or a protocol the server doesn't speak. */
+const FATAL_ERRORS: ReadonlySet<ErrorCode> = new Set([
+  "room_full",
+  "unsupported_version",
+]);
 
 /**
  * One tab's membership of one room: owns the WebSocket, joins, keeps the
@@ -311,7 +317,8 @@ export class RoomSession {
     this.send(ping);
   }
 
-  close(): void {
+  /** Leave the room. `error`, if given, is shown as why. */
+  close(error?: string): void {
     this.closed = true;
     this.queued = {};
     if (this.retryTimer !== null)
@@ -320,7 +327,7 @@ export class RoomSession {
       );
     this.socket.onopen = this.socket.onmessage = this.socket.onclose = null;
     this.socket.close();
-    this.update({ status: "closed" });
+    this.update(error ? { status: "closed", error } : { status: "closed" });
   }
 
   private send(msg: ClientMessage): void {
@@ -395,6 +402,8 @@ export class RoomSession {
         // who controls playback), but the player must undo what it assumed.
         if (msg.code === "not_host")
           this.update({ refused: this.snap.refused + 1 });
+        // The join was refused, and asking again won't change that: stop.
+        else if (FATAL_ERRORS.has(msg.code)) this.close(msg.message);
         else this.update({ error: msg.message });
         break;
     }
