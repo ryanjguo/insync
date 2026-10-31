@@ -260,6 +260,41 @@ describe("RoomSession", () => {
     expect(session.snapshot.status).toBe("closed");
   });
 
+  it.each([
+    ["room_full", "room is full"],
+    ["unsupported_version", "server speaks protocol version 2"],
+  ] as const)(
+    "ends the session when the join is refused (%s)",
+    (code, message) => {
+      socket.onopen?.(new Event("open"));
+      socket.receive({ type: "error", code, message });
+      expect(session.snapshot).toMatchObject({
+        status: "closed",
+        error: message,
+      });
+      expect(socket.closed).toBe(true);
+      expect(timers).toEqual([]);
+    },
+  );
+
+  it("gives up rather than reconnecting when a rejoin finds the room full", () => {
+    socket.onopen?.(new Event("open"));
+    welcome();
+    socket.onclose?.({} as CloseEvent);
+    timers.shift()!.fn();
+    socket.onopen?.(new Event("open"));
+    socket.receive({
+      type: "error",
+      code: "room_full",
+      message: "room is full",
+    });
+    expect(session.snapshot).toMatchObject({
+      status: "closed",
+      error: "room is full",
+    });
+    expect(timers).toEqual([]);
+  });
+
   it("counts changes refused for not being the host, without showing an error", () => {
     welcome();
     socket.receive({
